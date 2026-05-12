@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ABM Platform — Projects</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <style>
+        :root { --pico-font-size: 16px; }
+        .project-card {
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .project-card:hover {
+            border-color: var(--pico-primary);
+        }
+        .project-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .project-header a.delete {
+            font-size: 0.85em;
+            color: var(--pico-color-red-500);
+        }
+        .project-date {
+            font-size: 0.85em;
+            color: var(--pico-muted-color);
+        }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <h1>ABM Platform</h1>
+        <p>Select a project or create a new one.</p>
+
+        <!-- Create Project -->
+        <article>
+            <form id="create-form">
+                <div style="display:flex; gap:1em; align-items:end; margin-bottom:0.5em;">
+                    <input type="text" id="project-name" placeholder="New project name" required style="margin:0;">
+                    <button type="submit" style="margin:0; white-space:nowrap;">Create Project</button>
+                </div>
+                <input type="text" id="project-roles" placeholder="Target roles for contact enrichment (comma-separated), e.g.: CEO, CTO, HR Director" style="margin:0; font-size:0.9em;">
+            </form>
+        </article>
+
+        <!-- Project List -->
+        <div id="project-list">
+            <p style="color:var(--pico-muted-color)">Loading...</p>
+        </div>
+    </main>
+
+    <script>
+        async function loadProjects() {
+            const container = document.getElementById("project-list");
+            try {
+                const resp = await fetch("/api/projects");
+                const projects = await resp.json();
+
+                if (!projects.length) {
+                    container.innerHTML = '<p style="color:var(--pico-muted-color)">No projects yet. Create one above.</p>';
+                    return;
+                }
+
+                container.innerHTML = projects.map(p => {
+                    const date = p.created_at ? new Date(p.created_at).toLocaleDateString() : "";
+                    const roles = (p.target_roles || []).map(r => escapeHtml(r)).join(", ");
+                    return `<article class="project-card" onclick="window.location='/projects/${p.id}'">
+                        <div class="project-header">
+                            <h4 style="margin:0;">${escapeHtml(p.name)}</h4>
+                            <a href="#" class="delete" onclick="deleteProject(event, '${p.id}')">Delete</a>
+                        </div>
+                        <span class="project-date">Created ${date}</span>
+                        ${roles ? `<br><span style="font-size:0.85em; color:var(--pico-muted-color);">Roles: ${roles}</span>` : ""}
+                    </article>`;
+                }).join("");
+            } catch (err) {
+                container.innerHTML = '<p style="color:var(--pico-color-red-500)">Failed to load projects.</p>';
+                console.error(err);
+            }
+        }
+
+        document.getElementById("create-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const input = document.getElementById("project-name");
+            const rolesInput = document.getElementById("project-roles");
+            const name = input.value.trim();
+            if (!name) return;
+
+            const target_roles = rolesInput.value
+                .split(",")
+                .map(r => r.trim())
+                .filter(r => r.length > 0);
+
+            await fetch("/api/projects", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name, target_roles }),
+            });
+            input.value = "";
+            rolesInput.value = "";
+            loadProjects();
+        });
+
+        async function deleteProject(e, projectId) {
+            e.stopPropagation();
+            e.preventDefault();
+            if (!confirm("Delete this project and ALL its files/data?")) return;
+            await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+            loadProjects();
+        }
+
+        function escapeHtml(text) {
+            const d = document.createElement("div");
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        loadProjects();
+    </script>
+</body>
+</html>

@@ -1,0 +1,283 @@
+import io
+import re
+import logging
+
+import pandas as pd
+
+from app.database import supabase
+
+logger = logging.getLogger(__name__)
+
+POSTING_TEXT_FIELDS = ["title", "snippet_requirement", "snippet_responsibility"]
+NEWS_TEXT_FIELDS = ["title", "snippet"]
+HTML_TAG_RE = re.compile(r"<[^>]+>")
+SENTENCE_SPLIT_RE = re.compile(r"[.!?;]\s+")
+
+
+def _strip_html(text: str) -> str:
+    return HTML_TAG_RE.sub("", text)
+
+
+def _extract_sentences(text: str, keyword_pattern: re.Pattern) -> list[str]:
+    """Find all sentences in text that contain the keyword."""
+    sentences = SENTENCE_SPLIT_RE.split(text)
+    return [s.strip() for s in sentences if keyword_pattern.search(s)]
+
+
+def _fetch_all(table: str, column: str, value: str, select: str = "*") -> list[dict]:
+    """Fetch all rows matching column=value, paginating through 1000-row limit."""
+    all_rows = []
+    offset = 0
+    page_size = 1000
+    while True:
+        result = (
+            supabase.table(table)
+            .select(select)
+            .eq(column, value)
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        rows = result.data
+        if not rows:
+            break
+        all_rows.extend(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return all_rows
+
+
+def _fetch_all_in(table: str, column: str, values: list[str], select: str = "*") -> list[dict]:
+    """Fetch all rows where column IN (values), paginating in batches."""
+    if not values:
+        return []
+    all_rows = []
+    batch_size = 200
+    for i in range(0, len(values), batch_size):
+        batch_values = values[i: i + batch_size]
+        offset = 0
+        page_size = 1000
+        while True:
+            result = (
+                supabase.table(table)
+                .select(select)
+                .in_(column, batch_values)
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            rows = result.data
+            if not rows:
+                break
+            all_rows.extend(rows)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+    return all_rows
+
+
+def scan_project_keywords(project_id: str) -> dict:
+    """Scan all postings in a project for keyword matches.
+
+    Returns:
+        {
+            "groups": [{"name": str, "keywords": [str, ...]}],
+            "companies": [
+                {
+                    "name": str,
+                    "inn": str,
+                    "results": {
+                        keyword: {"count": int, "sentences": [{"field": str, "title": str, "sentence": str}]}
+                    }
+                }
+            ]
+        }
+    """
+    # 1. Fetch keyword groups and keywords
+    groups_rows = _fetch_all("keyword_groups", "project_id", project_id, select="id, name")
+    if not groups_rows:
+        raise ValueError("No keyword groups defined for this project")
+
+    group_ids = [g["id"] for g in groups_rows]
+    keywords_rows = _fetch_all_in("keywords", "group_id", group_ids, select="id, group_id, keyword")
+
+    # Build group structure
+    groups = []
+    all_keywords = []  # list of (keyword_text, group_name)
+    for g in groups_rows:
+        kws = [k["keyword"] for k in keywords_rows if k["group_id"] == g["id"]]
+        groups.append({"name": g["name"], "keywords": kws})
+        for kw in kws:
+            all_keywords.append((kw, g["name"]))
+
+    if not all_keywords:
+        raise ValueError("No keywords defined in any group")
+
+    # Compile patterns once
+    keyword_patterns = {
+        kw: re.compile(re.escape(kw), re.IGNORECASE)
+        for kw, _ in all_keywords
+    }
+
+    # 2. Fetch all sessions for this project
+    sessions = _fetch_all("sessions", "project_id", project_id, select="id")
+    session_ids = [s["id"] for s in sessions]
+    if not session_ids:
+        raise ValueError("No sessions found in this project")
+
+    # 3. Fetch all companies across sessions
+    all_companies = _fetch_all_in(
+        "companies", "session_id", session_ids,
+        select="id, legal_name, inn, known_names"
+    )
+
+    # 4. Deduplicate companies by inn (fallback: lower(legal_name))
+    dedup: dict[str, dict] = {}
+    for c in all_companies:
+        inn = (c.get("inn") or "").strip()
+        legal_name = c.get("legal_name", "")
+        key = f"inn:{inn}" if inn else f"name:{legal_name.strip().lower()}"
+
+        if key not in dedup:
+            dedup[key] = {"name": legal_name, "inn": inn, "company_ids": []}
+        dedup[key]["company_ids"].append(c["id"])
+
+    unique_companies = list(dedup.values())
+
+    # 5. Fetch all postings and news for all company_ids
+    all_company_ids = [cid for uc in unique_companies for cid in uc["company_ids"]]
+
+    all_postings = _fetch_all_in(
+        "postings", "company_id", all_company_ids,
+        select="company_id, title, snippet_requirement, snippet_responsibility"
+    )
+    postings_by_company: dict[str, list] = {}
+    for p in all_postings:
+        postings_by_company.setdefault(p["company_id"], []).append(p)
+
+    all_news = _fetch_all_in(
+        "news_articles", "company_id", all_company_ids,
+        select="company_id, title, snippet"
+    )
+    news_by_company: dict[str, list] = {}
+    for a in all_news:
+        news_by_company.setdefault(a["company_id"], []).append(a)
+
+    # 6. For each company x keyword, search postings and news
+    result_companies = []
+    for uc in unique_companies:
+        company_postings = []
+        company_news = []
+        for cid in uc["company_ids"]:
+            company_postings.extend(postings_by_company.get(cid, []))
+            company_news.extend(news_by_company.get(cid, []))
+
+        keyword_results = {}
+        for kw, _group_name in all_keywords:
+            pattern = keyword_patterns[kw]
+            matches = []
+
+            for posting in company_postings:
+                for field in POSTING_TEXT_FIELDS:
+                    raw_text = posting.get(field) or ""
+                    if not raw_text:
+                        continue
+                    clean_text = _strip_html(raw_text)
+                    for sentence in _extract_sentences(clean_text, pattern):
+                        matches.append({
+                            "source": "posting",
+                            "field": field,
+                            "title": posting.get("title") or "",
+                            "sentence": sentence,
+                        })
+
+            for article in company_news:
+                for field in NEWS_TEXT_FIELDS:
+                    raw_text = article.get(field) or ""
+                    if not raw_text:
+                        continue
+                    clean_text = _strip_html(raw_text)
+                    for sentence in _extract_sentences(clean_text, pattern):
+                        matches.append({
+                            "source": "news",
+                            "field": field,
+                            "title": article.get("title") or "",
+                            "sentence": sentence,
+                        })
+
+            keyword_results[kw] = {"count": len(matches), "sentences": matches}
+
+        result_companies.append({
+            "name": uc["name"],
+            "inn": uc["inn"],
+            "results": keyword_results,
+        })
+
+    return {"groups": groups, "companies": result_companies}
+
+
+def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
+    """Generate a two-sheet XLSX from scan results."""
+    groups = scan_result["groups"]
+    companies = scan_result["companies"]
+
+    # ── Sheet 1: Summary ──
+    summary_rows = []
+    for company in companies:
+        row: dict = {"Company": company["name"], "INN": company["inn"]}
+        for group in groups:
+            group_found = 0
+            for kw in group["keywords"]:
+                count = company["results"].get(kw, {}).get("count", 0)
+                row[kw] = count
+                if count > 0:
+                    group_found += 1
+            row[f"{group['name']} (total)"] = group_found
+        summary_rows.append(row)
+
+    summary_df = pd.DataFrame(summary_rows)
+
+    # Order columns: Company, INN, then per group: keywords + group total
+    ordered_cols = ["Company", "INN"]
+    for group in groups:
+        for kw in group["keywords"]:
+            ordered_cols.append(kw)
+        ordered_cols.append(f"{group['name']} (total)")
+    ordered_cols = [c for c in ordered_cols if c in summary_df.columns]
+    summary_df = summary_df[ordered_cols]
+
+    # ── Sheet 2: Details ──
+    # One row per company × keyword; all matching sentences combined into one cell
+    detail_rows = []
+    for company in companies:
+        for group in groups:
+            for kw in group["keywords"]:
+                matches = company["results"].get(kw, {}).get("sentences", [])
+                if not matches:
+                    continue
+                combined = "\n\n".join(
+                    f"[{'Job Posting' if m['source'] == 'posting' else 'News'} / {m['title']} / {m['field']}] {m['sentence']}"
+                    for m in matches
+                )
+                posting_count = sum(1 for m in matches if m["source"] == "posting")
+                news_count = sum(1 for m in matches if m["source"] == "news")
+                detail_rows.append({
+                    "Company": company["name"],
+                    "INN": company["inn"],
+                    "Keyword Group": group["name"],
+                    "Keyword": kw,
+                    "Total Matches": len(matches),
+                    "From Postings": posting_count,
+                    "From News": news_count,
+                    "Sentences": combined,
+                })
+
+    details_df = pd.DataFrame(detail_rows) if detail_rows else pd.DataFrame(
+        columns=["Company", "INN", "Keyword Group", "Keyword", "Total Matches", "From Postings", "From News", "Sentences"]
+    )
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+        details_df.to_excel(writer, sheet_name="Details", index=False)
+    buffer.seek(0)
+    return buffer

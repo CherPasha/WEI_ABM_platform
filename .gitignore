@@ -1,0 +1,30 @@
+# Секреты и ключи
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# LibreOffice lock files
+.~lock.*
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Большие датасеты и файлы с данными
+postings_3.xlsx
+datasets/
+kontur_data/
+hunter_emails/
+data_template.xlsx
+WEI_GROUP_*.xlsx
+ABM_emails*.xlsx
