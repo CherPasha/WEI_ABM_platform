@@ -1,0 +1,36 @@
+import io
+import re
+
+import openpyxl
+
+
+def parse_keyword_xlsx(file_bytes: bytes) -> list[dict]:
+    """
+    Parse an Excel file with two columns:
+      col 0 — keyword group name (str)
+      col 1 — keywords as quoted comma-separated string, e.g. "kw1", "kw2"
+
+    Returns list of {"group": str, "keywords": list[str]}.
+    Raises ValueError if file has fewer than 2 columns.
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    ws = wb.active
+
+    if ws.max_column < 2:
+        raise ValueError("File must have at least 2 columns")
+
+    results = []
+    for row in ws.iter_rows(values_only=True):
+        raw_group = row[0]
+        group_name = str(raw_group).strip() if raw_group is not None else ""
+        if not group_name or group_name.lower() == "nan":
+            continue
+
+        raw_kw = row[1] if len(row) > 1 else None
+        kw_cell = str(raw_kw) if raw_kw is not None else ""
+        keywords = re.findall(r'"([^"]+)"', kw_cell)
+
+        results.append({"group": group_name, "keywords": keywords})
+
+    wb.close()
+    return results
