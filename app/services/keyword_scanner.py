@@ -127,10 +127,12 @@ def scan_project_keywords(project_id: str) -> dict:
 
     def _is_stopped(pub: dict, fields: list[str]) -> bool:
         """Return True if any stop word matches any text field of this publication."""
-        for pattern in stop_patterns:
-            for field in fields:
-                text = _strip_html(pub.get(field) or "")
-                if text and pattern.search(text):
+        for field in fields:
+            text = _strip_html(pub.get(field) or "")
+            if not text:
+                continue
+            for pattern in stop_patterns:
+                if pattern.search(text):
                     return True
         return False
 
@@ -187,14 +189,17 @@ def scan_project_keywords(project_id: str) -> dict:
             company_postings.extend(postings_by_company.get(cid, []))
             company_news.extend(news_by_company.get(cid, []))
 
+        # Pre-filter publications that contain a stop word (do this once, not per keyword)
+        if stop_patterns:
+            company_postings = [p for p in company_postings if not _is_stopped(p, POSTING_TEXT_FIELDS)]
+            company_news = [a for a in company_news if not _is_stopped(a, NEWS_TEXT_FIELDS)]
+
         keyword_results = {}
         for kw, _group_name in all_keywords:
             pattern = keyword_patterns[kw]
             matches = []
 
             for posting in company_postings:
-                if stop_patterns and _is_stopped(posting, POSTING_TEXT_FIELDS):
-                    continue
                 for field in POSTING_TEXT_FIELDS:
                     raw_text = posting.get(field) or ""
                     if not raw_text:
@@ -209,8 +214,6 @@ def scan_project_keywords(project_id: str) -> dict:
                         })
 
             for article in company_news:
-                if stop_patterns and _is_stopped(article, NEWS_TEXT_FIELDS):
-                    continue
                 for field in NEWS_TEXT_FIELDS:
                     raw_text = article.get(field) or ""
                     if not raw_text:

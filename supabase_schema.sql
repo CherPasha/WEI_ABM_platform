@@ -131,6 +131,15 @@ CREATE TABLE keywords (
 );
 CREATE INDEX idx_keywords_group ON keywords(group_id);
 
+-- Stop words belonging to a project (publications matching any stop word are excluded from keyword scan)
+CREATE TABLE IF NOT EXISTS stop_words (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+    word TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_stop_words_project ON stop_words(project_id);
+
 -- Migration: add new columns to existing tables
 -- Run this if the tables already exist (skip if running fresh)
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS registration_date TEXT;
