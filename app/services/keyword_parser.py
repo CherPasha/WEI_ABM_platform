@@ -46,6 +46,8 @@ def parse_stop_word_xlsx(file_bytes: bytes) -> list[str]:
     ws = wb.active
     results = []
     for row in ws.iter_rows(values_only=True):
+        if not row:
+            continue
         raw_word = row[0]
         word = str(raw_word).strip() if raw_word is not None else ""
         if word:

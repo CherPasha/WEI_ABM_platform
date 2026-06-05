@@ -518,7 +518,7 @@ async def add_stop_word(project_id: str, body: CreateStopWord):
 async def delete_stop_word(word_id: str):
     result = supabase.table("stop_words").delete().eq("id", word_id).execute()
     if not result.data:
-        return {"error": "Stop word not found"}
+        raise HTTPException(status_code=404, detail="Stop word not found")
     return {"status": "ok"}
 
 
@@ -530,16 +530,27 @@ async def import_stop_words(project_id: str, file: UploadFile = File(...)):
     file_bytes = await file.read()
     try:
         parsed = parse_stop_word_xlsx(file_bytes)
-    except Exception as e:
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    existing = (
-        supabase.table("stop_words")
-        .select("word")
-        .eq("project_id", project_id)
-        .execute()
-    ).data
-    existing_set = {r["word"].lower() for r in existing}
+    # Paginate past Supabase's 1000-row default limit
+    existing_set: set[str] = set()
+    offset = 0
+    while True:
+        page = (
+            supabase.table("stop_words")
+            .select("word")
+            .eq("project_id", project_id)
+            .range(offset, offset + 999)
+            .execute()
+        ).data
+        if not page:
+            break
+        for r in page:
+            existing_set.add(r["word"].lower())
+        if len(page) < 1000:
+            break
+        offset += 1000
 
     to_insert = []
     words_added = 0
