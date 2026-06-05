@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
@@ -13,6 +13,7 @@ from app.database import supabase
 from app.models import CreateKeywordGroup, RenameKeywordGroup, CreateKeyword, UpdateProject
 from app.services.session_processor import process_session, resume_session
 from app.services.keyword_scanner import scan_project_keywords, generate_keyword_xlsx
+from app.services.keyword_parser import parse_keyword_xlsx
 
 logging.basicConfig(level=logging.INFO)
 
@@ -388,6 +389,72 @@ async def delete_keyword(keyword_id: str):
     if not result.data:
         return {"error": "Keyword not found"}
     return {"status": "ok"}
+
+
+@app.post("/api/projects/{project_id}/keyword-groups/import")
+async def import_keyword_groups(project_id: str, file: UploadFile = File(...)):
+    if not (file.filename or "").endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="File must be .xlsx or .xls")
+
+    file_bytes = await file.read()
+    try:
+        parsed = parse_keyword_xlsx(file_bytes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    existing_groups = (
+        supabase.table("keyword_groups")
+        .select("id, name")
+        .eq("project_id", project_id)
+        .execute()
+    ).data
+    group_by_name = {g["name"]: g["id"] for g in existing_groups}
+
+    groups_created = 0
+    groups_updated = 0
+    keywords_added = 0
+    keywords_skipped = 0
+
+    for row in parsed:
+        group_name = row["group"]
+
+        if group_name in group_by_name:
+            group_id = group_by_name[group_name]
+            groups_updated += 1
+        else:
+            result = supabase.table("keyword_groups").insert({
+                "project_id": project_id,
+                "name": group_name,
+            }).execute()
+            group_id = result.data[0]["id"]
+            group_by_name[group_name] = group_id
+            groups_created += 1
+
+        existing_kws = (
+            supabase.table("keywords")
+            .select("keyword")
+            .eq("group_id", group_id)
+            .execute()
+        ).data
+        existing_set = {k["keyword"].lower() for k in existing_kws}
+
+        for kw in row["keywords"]:
+            if kw.lower() in existing_set:
+                keywords_skipped += 1
+            else:
+                supabase.table("keywords").insert({
+                    "group_id": group_id,
+                    "keyword": kw,
+                }).execute()
+                existing_set.add(kw.lower())
+                keywords_added += 1
+
+    return {
+        "groups_created": groups_created,
+        "groups_updated": groups_updated,
+        "keywords_added": keywords_added,
+        "keywords_skipped": keywords_skipped,
+    }
 
 
 # ──────────────────────── Keyword Scan ────────────────────────
