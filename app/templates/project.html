@@ -157,7 +157,7 @@
                         onclick="document.getElementById('kw-import-input').click()">Import from file</button>
                 <input type="file" id="kw-import-input" accept=".xlsx,.xls" style="display:none"
                        onchange="importKeywordFile(this)">
-                <span id="kw-import-status" style="font-size:0.85em; color:var(--muted-color);"></span>
+                <span id="kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
             </div>
             <div id="keyword-groups-container"></div>
             <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
@@ -473,11 +473,12 @@
                     method: "POST",
                     body: formData,
                 });
-                const data = await resp.json();
+                let data = {};
+                try { data = await resp.json(); } catch (_) {}
                 if (!resp.ok) {
-                    status.textContent = "Error: " + (data.detail || "Import failed");
+                    status.textContent = "Error: " + (data.detail || resp.statusText || "Import failed");
                 } else {
-                    status.textContent = `Done: ${data.keywords_added} keywords added, ${data.keywords_skipped} skipped`;
+                    status.textContent = `Done: ${data.groups_created} groups, ${data.keywords_added} keywords added, ${data.keywords_skipped} skipped`;
                     loadKeywordGroups();
                 }
             } catch (err) {
