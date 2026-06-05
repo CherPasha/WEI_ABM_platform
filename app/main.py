@@ -393,8 +393,8 @@ async def delete_keyword(keyword_id: str):
 
 @app.post("/api/projects/{project_id}/keyword-groups/import")
 async def import_keyword_groups(project_id: str, file: UploadFile = File(...)):
-    if not (file.filename or "").endswith((".xlsx", ".xls")):
-        raise HTTPException(status_code=400, detail="File must be .xlsx or .xls")
+    if not (file.filename or "").endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="File must be .xlsx")
 
     file_bytes = await file.read()
     try:
@@ -459,16 +459,16 @@ async def import_keyword_groups(project_id: str, file: UploadFile = File(...)):
         group_id = group_id_by_name[group_name]
         existing_set = existing_kws_by_group[group_id]
 
+        to_insert = []
         for kw in row["keywords"]:
             if kw.lower() in existing_set:
                 keywords_skipped += 1
             else:
-                supabase.table("keywords").insert({
-                    "group_id": group_id,
-                    "keyword": kw,
-                }).execute()
+                to_insert.append({"group_id": group_id, "keyword": kw})
                 existing_set.add(kw.lower())
                 keywords_added += 1
+        if to_insert:
+            supabase.table("keywords").insert(to_insert).execute()
 
     return {
         "groups_created": groups_created,
