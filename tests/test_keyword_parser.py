@@ -2,7 +2,7 @@ import io
 import pytest
 import openpyxl
 
-from app.services.keyword_parser import parse_keyword_xlsx
+from app.services.keyword_parser import parse_keyword_xlsx, parse_stop_word_xlsx
 
 
 def _make_xlsx(rows: list) -> bytes:
@@ -10,6 +10,16 @@ def _make_xlsx(rows: list) -> bytes:
     ws = wb.active
     for row in rows:
         ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _make_single_col_xlsx(words: list) -> bytes:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for w in words:
+        ws.append([w])
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -62,3 +72,27 @@ def test_single_keyword_no_comma():
     ])
     result = parse_keyword_xlsx(data)
     assert result == [{"group": "Group", "keywords": ["только один"]}]
+
+
+def test_parse_stop_words_basic():
+    data = _make_single_col_xlsx(["конкурент", "тендер", "вакансия"])
+    result = parse_stop_word_xlsx(data)
+    assert result == ["конкурент", "тендер", "вакансия"]
+
+
+def test_parse_stop_words_skips_empty():
+    data = _make_single_col_xlsx(["слово", "", None, "другое"])
+    result = parse_stop_word_xlsx(data)
+    assert result == ["слово", "другое"]
+
+
+def test_parse_stop_words_empty_file():
+    data = _make_single_col_xlsx([])
+    result = parse_stop_word_xlsx(data)
+    assert result == []
+
+
+def test_parse_stop_words_strips_whitespace():
+    data = _make_single_col_xlsx(["  пробел  ", "чистый"])
+    result = parse_stop_word_xlsx(data)
+    assert result == ["пробел", "чистый"]

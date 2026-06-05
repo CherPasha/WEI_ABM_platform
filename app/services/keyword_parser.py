@@ -34,3 +34,21 @@ def parse_keyword_xlsx(file_bytes: bytes) -> list[dict]:
 
     wb.close()
     return results
+
+
+def parse_stop_word_xlsx(file_bytes: bytes) -> list[str]:
+    """
+    Parse an Excel file with one column of stop words, one word per row.
+
+    Returns list of non-empty stripped strings.
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    ws = wb.active
+    results = []
+    for row in ws.iter_rows(values_only=True):
+        raw = row[0] if row else None
+        word = str(raw).strip() if raw is not None else ""
+        if word:
+            results.append(word)
+    wb.close()
+    return results
