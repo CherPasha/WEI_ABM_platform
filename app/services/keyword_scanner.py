@@ -118,6 +118,22 @@ def scan_project_keywords(project_id: str) -> dict:
         for kw, _ in all_keywords
     }
 
+    # 1b. Fetch stop words and compile patterns (empty list = no filtering)
+    stop_word_rows = _fetch_all("stop_words", "project_id", project_id, select="word")
+    stop_patterns = [
+        re.compile(re.escape(r["word"]), re.IGNORECASE)
+        for r in stop_word_rows
+    ]
+
+    def _is_stopped(pub: dict, fields: list[str]) -> bool:
+        """Return True if any stop word matches any text field of this publication."""
+        for pattern in stop_patterns:
+            for field in fields:
+                text = _strip_html(pub.get(field) or "")
+                if text and pattern.search(text):
+                    return True
+        return False
+
     # 2. Fetch all sessions for this project
     sessions = _fetch_all("sessions", "project_id", project_id, select="id")
     session_ids = [s["id"] for s in sessions]
@@ -177,6 +193,8 @@ def scan_project_keywords(project_id: str) -> dict:
             matches = []
 
             for posting in company_postings:
+                if stop_patterns and _is_stopped(posting, POSTING_TEXT_FIELDS):
+                    continue
                 for field in POSTING_TEXT_FIELDS:
                     raw_text = posting.get(field) or ""
                     if not raw_text:
@@ -191,6 +209,8 @@ def scan_project_keywords(project_id: str) -> dict:
                         })
 
             for article in company_news:
+                if stop_patterns and _is_stopped(article, NEWS_TEXT_FIELDS):
+                    continue
                 for field in NEWS_TEXT_FIELDS:
                     raw_text = article.get(field) or ""
                     if not raw_text:
