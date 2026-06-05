@@ -10,10 +10,10 @@ from starlette.requests import Request
 from pydantic import BaseModel
 
 from app.database import supabase
-from app.models import CreateKeywordGroup, RenameKeywordGroup, CreateKeyword, UpdateProject
+from app.models import CreateKeywordGroup, RenameKeywordGroup, CreateKeyword, CreateStopWord, UpdateProject
 from app.services.session_processor import process_session, resume_session
 from app.services.keyword_scanner import scan_project_keywords, generate_keyword_xlsx
-from app.services.keyword_parser import parse_keyword_xlsx
+from app.services.keyword_parser import parse_keyword_xlsx, parse_stop_word_xlsx
 
 logging.basicConfig(level=logging.INFO)
 
@@ -476,6 +476,86 @@ async def import_keyword_groups(project_id: str, file: UploadFile = File(...)):
         "keywords_added": keywords_added,
         "keywords_skipped": keywords_skipped,
     }
+
+
+# ──────────────────────── Stop Words ────────────────────────
+
+
+@app.get("/api/projects/{project_id}/stop-words")
+async def list_stop_words(project_id: str):
+    result = (
+        supabase.table("stop_words")
+        .select("id, word, created_at")
+        .eq("project_id", project_id)
+        .order("created_at")
+        .execute()
+    )
+    return result.data
+
+
+@app.post("/api/projects/{project_id}/stop-words")
+async def add_stop_word(project_id: str, body: CreateStopWord):
+    word = body.word.strip()
+    if not word:
+        raise HTTPException(status_code=400, detail="Word cannot be empty")
+    existing = (
+        supabase.table("stop_words")
+        .select("id")
+        .eq("project_id", project_id)
+        .ilike("word", word)
+        .execute()
+    )
+    if existing.data:
+        raise HTTPException(status_code=409, detail="Stop word already exists")
+    result = supabase.table("stop_words").insert({
+        "project_id": project_id,
+        "word": word,
+    }).execute()
+    return result.data[0]
+
+
+@app.delete("/api/stop-words/{word_id}")
+async def delete_stop_word(word_id: str):
+    result = supabase.table("stop_words").delete().eq("id", word_id).execute()
+    if not result.data:
+        return {"error": "Stop word not found"}
+    return {"status": "ok"}
+
+
+@app.post("/api/projects/{project_id}/stop-words/import")
+async def import_stop_words(project_id: str, file: UploadFile = File(...)):
+    if not (file.filename or "").endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="File must be .xlsx")
+
+    file_bytes = await file.read()
+    try:
+        parsed = parse_stop_word_xlsx(file_bytes)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    existing = (
+        supabase.table("stop_words")
+        .select("word")
+        .eq("project_id", project_id)
+        .execute()
+    ).data
+    existing_set = {r["word"].lower() for r in existing}
+
+    to_insert = []
+    words_added = 0
+    words_skipped = 0
+    for word in parsed:
+        if word.lower() in existing_set:
+            words_skipped += 1
+        else:
+            to_insert.append({"project_id": project_id, "word": word})
+            existing_set.add(word.lower())
+            words_added += 1
+
+    if to_insert:
+        supabase.table("stop_words").insert(to_insert).execute()
+
+    return {"words_added": words_added, "words_skipped": words_skipped}
 
 
 # ──────────────────────── Keyword Scan ────────────────────────

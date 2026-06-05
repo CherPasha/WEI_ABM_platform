@@ -14,6 +14,10 @@ class CreateKeyword(BaseModel):
     keyword: str
 
 
+class CreateStopWord(BaseModel):
+    word: str
+
+
 class UpdateProject(BaseModel):
     target_roles: list[str]
 
