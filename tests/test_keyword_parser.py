@@ -96,3 +96,19 @@ def test_parse_stop_words_strips_whitespace():
     data = _make_single_col_xlsx(["  пробел  ", "чистый"])
     result = parse_stop_word_xlsx(data)
     assert result == ["пробел", "чистый"]
+
+
+def test_parse_stop_words_numeric_cell():
+    data = _make_single_col_xlsx([2024, "слово"])
+    result = parse_stop_word_xlsx(data)
+    assert result == ["2024", "слово"]
+
+
+def test_parse_stop_words_ignores_extra_columns():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["слово", "лишнее"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    result = parse_stop_word_xlsx(buf.getvalue())
+    assert result == ["слово"]
