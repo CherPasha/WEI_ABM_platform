@@ -147,6 +147,24 @@
             </div>
         </article>
 
+        <!-- Stop Words -->
+        <article>
+            <h3>Stop Words</h3>
+            <p style="font-size:0.85em; color:var(--pico-muted-color); margin-bottom:0.75em;">
+                Publications containing any stop word are excluded from keyword counts.
+            </p>
+            <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
+                <input type="text" id="new-stop-word" placeholder="Stop word..." style="margin:0;">
+                <button onclick="addStopWord()" style="margin:0; white-space:nowrap;">Add Stop Word</button>
+                <button id="import-sw-btn" class="secondary" style="margin:0; white-space:nowrap;"
+                        onclick="document.getElementById('sw-import-input').click()">Import from file</button>
+                <input type="file" id="sw-import-input" accept=".xlsx" style="display:none"
+                       onchange="importStopWordFile(this)">
+                <span id="sw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
+            </div>
+            <div id="stop-words-container"></div>
+        </article>
+
         <!-- Keyword Analysis -->
         <article>
             <h3>Keyword Analysis</h3>
@@ -385,6 +403,80 @@
             loadHistory();
         }
 
+        // ---- Stop Words ----
+        async function loadStopWords() {
+            const container = document.getElementById("stop-words-container");
+            try {
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/stop-words`);
+                const words = await resp.json();
+                if (!words.length) {
+                    container.innerHTML = '<p style="color:var(--pico-muted-color); font-size:0.9em;">No stop words yet.</p>';
+                    return;
+                }
+                container.innerHTML = '<div class="kw-list">' + words.map(w =>
+                    `<span class="kw-tag">${escapeHtml(w.word)}<button onclick="deleteStopWord('${w.id}')" title="Remove">&times;</button></span>`
+                ).join("") + '</div>';
+            } catch (err) {
+                console.error("Failed to load stop words:", err);
+            }
+        }
+
+        async function addStopWord() {
+            const input = document.getElementById("new-stop-word");
+            const word = input.value.trim();
+            if (!word) return;
+            const resp = await fetch(`/api/projects/${PROJECT_ID}/stop-words`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ word }),
+            });
+            if (resp.ok) {
+                input.value = "";
+                loadStopWords();
+            } else {
+                let data = {};
+                try { data = await resp.json(); } catch (_) {}
+                alert(data.detail || "Failed to add stop word");
+            }
+        }
+
+        async function deleteStopWord(wordId) {
+            await fetch(`/api/stop-words/${wordId}`, { method: "DELETE" });
+            loadStopWords();
+        }
+
+        async function importStopWordFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const btn = document.getElementById("import-sw-btn");
+            const status = document.getElementById("sw-import-status");
+            btn.disabled = true;
+            btn.setAttribute("aria-busy", "true");
+            status.textContent = "Importing...";
+            try {
+                const formData = new FormData();
+                formData.append("file", file);
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/stop-words/import`, {
+                    method: "POST",
+                    body: formData,
+                });
+                let data = {};
+                try { data = await resp.json(); } catch (_) {}
+                if (!resp.ok) {
+                    status.textContent = "Error: " + (data.detail || resp.statusText || "Import failed");
+                } else {
+                    status.textContent = `Done: ${data.words_added} added, ${data.words_skipped} skipped`;
+                    loadStopWords();
+                }
+            } catch (err) {
+                status.textContent = "Error: " + err.message;
+            } finally {
+                btn.disabled = false;
+                btn.removeAttribute("aria-busy");
+                input.value = "";
+            }
+        }
+
         // ---- Keyword Groups ----
         async function loadKeywordGroups() {
             const container = document.getElementById("keyword-groups-container");
@@ -577,6 +669,7 @@
         // Load on page load
         loadRoles();
         loadHistory();
+        loadStopWords();
         loadKeywordGroups();
     </script>
 </body>
