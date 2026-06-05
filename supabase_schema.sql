@@ -105,6 +105,7 @@ CREATE TABLE news_articles (
     title TEXT,
     source_name TEXT,
     snippet TEXT,
+    full_text TEXT,
     published_at TEXT,
     raw_data JSONB,
     created_at TIMESTAMPTZ DEFAULT now()
@@ -178,3 +179,6 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS run_postings BOOLEAN DEFAULT TRUE;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS run_news BOOLEAN DEFAULT TRUE;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS run_contacts BOOLEAN DEFAULT TRUE;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS run_enrichment BOOLEAN DEFAULT TRUE;
+
+-- Migration: full article text for news (scraped page body)
+ALTER TABLE news_articles ADD COLUMN IF NOT EXISTS full_text TEXT;

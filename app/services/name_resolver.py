@@ -1,8 +1,8 @@
 import time
 import logging
 import httpx
-from google import genai
 from app.config import settings
+from app.services.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -13,16 +13,15 @@ COMPANY_PROMPT = (
     "Ответ давай без форматирования и лишних комментариев, только название компании."
 )
 
-MODEL = "models/gemini-2.5-flash"
 NAME_UNAVAILABLE = "Название не доступно"
 
 
-def _get_client() -> genai.Client:
-    return genai.Client(api_key=settings.GEMINI_API_KEY)
+def _get_client() -> LLMClient:
+    return LLMClient()
 
 
-def find_company_real_name(client: genai.Client, company_name: str) -> str:
-    """Use Gemini to resolve a legal entity name to a real company name.
+def find_company_real_name(client: LLMClient, company_name: str) -> str:
+    """Use the LLM to resolve a legal entity name to a real company name.
 
     Retries up to 5 times on API errors with exponential backoff.
     Returns NAME_UNAVAILABLE if all retries fail, so the caller falls back to the legal name.
@@ -33,7 +32,7 @@ def find_company_real_name(client: genai.Client, company_name: str) -> str:
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model=MODEL,
+                model=settings.OPENAI_MODEL,
                 contents=COMPANY_PROMPT + company_name,
             )
             result = response.text.strip()

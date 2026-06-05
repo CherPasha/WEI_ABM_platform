@@ -9,7 +9,7 @@ from app.database import supabase
 logger = logging.getLogger(__name__)
 
 POSTING_TEXT_FIELDS = ["title", "snippet_requirement", "snippet_responsibility"]
-NEWS_TEXT_FIELDS = ["title", "snippet"]
+NEWS_TEXT_FIELDS = ["title", "snippet", "full_text"]
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 SENTENCE_SPLIT_RE = re.compile(r"[.!?;]\s+")
 
@@ -156,7 +156,7 @@ def scan_project_keywords(project_id: str) -> dict:
 
     all_news = _fetch_all_in(
         "news_articles", "company_id", all_company_ids,
-        select="company_id, title, snippet"
+        select="company_id, title, snippet, full_text"
     )
     news_by_company: dict[str, list] = {}
     for a in all_news:

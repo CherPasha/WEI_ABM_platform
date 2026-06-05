@@ -2,16 +2,16 @@ import json
 import logging
 import time
 import httpx
-from google import genai
 
 from app.database import supabase
 from app.config import settings
 from app.services.company_parser import parse_xlsx_to_companies
 from app.services.name_resolver import find_company_real_name, NAME_UNAVAILABLE
 from app.services.postings_finder import find_all_postings_for_company
-from app.services.news_finder import find_all_news_for_company
+from app.services.yandex_search import find_all_news_for_company
 from app.services.hunter_service import find_contacts_for_domain
 from app.services.contact_enrichment import enrich_contacts_for_company
+from app.services.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -103,14 +103,14 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
         # --- Step 2: Resolve company names ---
         # Always runs — needed by postings and news stages
         _update_session(session_id, status="resolving_names", names_done=0)
-        gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        llm_client = LLMClient()
 
         for i, company in enumerate(db_companies):
             legal_name = company.get("legal_name", "")
             if not legal_name:
                 continue
 
-            real_name = find_company_real_name(gemini_client, legal_name)
+            real_name = find_company_real_name(llm_client, legal_name)
             known_names = company.get("known_names") or [legal_name]
 
             if real_name and real_name != NAME_UNAVAILABLE and real_name not in known_names:
@@ -235,7 +235,7 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
                             .execute()
                         ).data
                         new_contacts = enrich_contacts_for_company(
-                            gemini_client, company, target_roles, session_id, existing,
+                            llm_client, company, target_roles, session_id, existing,
                         )
                         if new_contacts:
                             _batch_insert("contacts", new_contacts)
@@ -304,7 +304,7 @@ def resume_session(session_id: str):
         # ── Stage 1: Resolve names (resume from names_done) ──
         if names_done < total:
             _update_session(session_id, status="resolving_names")
-            gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            llm_client = LLMClient()
 
             for i, company in enumerate(db_companies[names_done:], start=names_done):
                 legal_name = company.get("legal_name", "")
@@ -312,7 +312,7 @@ def resume_session(session_id: str):
                     _update_session(session_id, names_done=i + 1)
                     continue
 
-                real_name = find_company_real_name(gemini_client, legal_name)
+                real_name = find_company_real_name(llm_client, legal_name)
                 known_names = company.get("known_names") or [legal_name]
 
                 if real_name and real_name != NAME_UNAVAILABLE and real_name not in known_names:
@@ -428,7 +428,7 @@ def resume_session(session_id: str):
 
             if target_roles:
                 _update_session(session_id, status="enriching_contacts")
-                gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+                llm_client = LLMClient()
 
                 for i, company in enumerate(db_companies[enrichment_done:], start=enrichment_done):
                     try:
@@ -439,7 +439,7 @@ def resume_session(session_id: str):
                             .execute()
                         ).data
                         new_contacts = enrich_contacts_for_company(
-                            gemini_client, company, target_roles, session_id, existing,
+                            llm_client, company, target_roles, session_id, existing,
                         )
                         if new_contacts:
                             _batch_insert("contacts", new_contacts)

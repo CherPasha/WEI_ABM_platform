@@ -4,14 +4,12 @@ import re
 import time
 
 import httpx
-from google import genai
 
 from app.config import settings
 from app.services.hunter_service import clean_domain, is_valid_domain
+from app.services.llm import LLMClient
 
 logger = logging.getLogger(__name__)
-
-MODEL = "models/gemini-2.5-flash"
 
 # ── Cyrillic → Latin transliteration (GOST 7.79-2000 System B) ──
 
@@ -115,7 +113,7 @@ def generate_email(first: str, last: str, pattern: str, domain: str) -> str:
     return f"{local}@{domain}"
 
 
-# ── Gemini role lookup ──
+# ── LLM role lookup ──
 
 ROLE_PROMPT_TEMPLATE = (
     "Ты опытный аналитик российского рынка.\n"
@@ -130,12 +128,12 @@ ROLE_PROMPT_TEMPLATE = (
 
 
 def find_people_by_roles(
-    client: genai.Client,
+    client: LLMClient,
     company_name: str,
     known_names: list[str],
     target_roles: list[str],
 ) -> list[dict]:
-    """Use Gemini to find people holding target roles at a company.
+    """Use the LLM to find people holding target roles at a company.
 
     Returns list of {"name": "...", "role": "..."} dicts.
     """
@@ -151,7 +149,7 @@ def find_people_by_roles(
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model=MODEL,
+                model=settings.OPENAI_MODEL,
                 contents=prompt,
             )
             text = response.text.strip()
@@ -162,12 +160,12 @@ def find_people_by_roles(
 
             people = json.loads(text)
             if not isinstance(people, list):
-                logger.warning("Gemini returned non-list for '%s': %s", company_name, text[:200])
+                logger.warning("LLM returned non-list for '%s': %s", company_name, text[:200])
                 return []
             return [p for p in people if isinstance(p, dict) and p.get("name") and p.get("role")]
 
         except json.JSONDecodeError:
-            logger.warning("Failed to parse Gemini JSON for '%s': %s", company_name, text[:200])
+            logger.warning("Failed to parse LLM JSON for '%s': %s", company_name, text[:200])
             return []
 
         except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError) as e:
@@ -186,7 +184,7 @@ def find_people_by_roles(
 
             wait = retry_delay * (2 ** attempt)
             logger.warning(
-                "Gemini API error for '%s'. Waiting %ds (attempt %d/%d): %s",
+                "LLM API error for '%s'. Waiting %ds (attempt %d/%d): %s",
                 company_name, wait, attempt + 1, max_retries, e,
             )
             time.sleep(wait)
@@ -199,7 +197,7 @@ def find_people_by_roles(
 
 
 def enrich_contacts_for_company(
-    client: genai.Client,
+    client: LLMClient,
     company: dict,
     target_roles: list[str],
     session_id: str,
@@ -208,7 +206,7 @@ def enrich_contacts_for_company(
     """Generate probable contacts for target roles at a company.
 
     1. Detect email pattern from existing Hunter contacts
-    2. Use Gemini to find people in target roles
+    2. Use the LLM to find people in target roles
     3. Transliterate names and generate emails
     4. Return new contact dicts ready for DB insertion
     """
@@ -228,7 +226,7 @@ def enrich_contacts_for_company(
             company.get("legal_name"), domain,
         )
 
-    # Find people via Gemini
+    # Find people via the LLM
     known_names = company.get("known_names") or [company.get("legal_name", "")]
     people = find_people_by_roles(client, company.get("legal_name", ""), known_names, target_roles)
     if not people:

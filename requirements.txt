@@ -6,6 +6,7 @@ pandas==2.2.1
 requests==2.31.0
 beautifulsoup4==4.12.3
 lxml==5.1.0
+playwright==1.47.0
 
 # Keyword matching
 regex==2023.12.25
@@ -27,4 +28,4 @@ aiofiles
 supabase
 
 # AI / LLM
-google-genai
+openai==2.40.0
