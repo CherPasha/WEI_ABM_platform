@@ -23,10 +23,10 @@ def parse_keyword_xlsx(file_bytes: bytes) -> list[dict]:
     for row in ws.iter_rows(values_only=True):
         raw_group = row[0]
         group_name = str(raw_group).strip() if raw_group is not None else ""
-        if not group_name or group_name.lower() == "nan":
+        if not group_name:
             continue
 
-        raw_kw = row[1] if len(row) > 1 else None
+        raw_kw = row[1]
         kw_cell = str(raw_kw) if raw_kw is not None else ""
         keywords = re.findall(r'"([^"]+)"', kw_cell)
 
