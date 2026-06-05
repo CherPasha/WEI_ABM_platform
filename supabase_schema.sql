@@ -139,6 +139,8 @@ CREATE TABLE IF NOT EXISTS stop_words (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_stop_words_project ON stop_words(project_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_stop_words_project_word
+    ON stop_words (project_id, lower(word));
 
 -- Migration: add new columns to existing tables
 -- Run this if the tables already exist (skip if running fresh)

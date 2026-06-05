@@ -498,11 +498,12 @@ async def add_stop_word(project_id: str, body: CreateStopWord):
     word = body.word.strip()
     if not word:
         raise HTTPException(status_code=400, detail="Word cannot be empty")
+    escaped_word = word.replace("%", r"\%").replace("_", r"\_")
     existing = (
         supabase.table("stop_words")
         .select("id")
         .eq("project_id", project_id)
-        .ilike("word", word)
+        .ilike("word", escaped_word)
         .execute()
     )
     if existing.data:
@@ -563,8 +564,9 @@ async def import_stop_words(project_id: str, file: UploadFile = File(...)):
             existing_set.add(word.lower())
             words_added += 1
 
-    if to_insert:
-        supabase.table("stop_words").insert(to_insert).execute()
+    batch_size = 500
+    for i in range(0, len(to_insert), batch_size):
+        supabase.table("stop_words").insert(to_insert[i:i + batch_size]).execute()
 
     return {"words_added": words_added, "words_skipped": words_skipped}
 
