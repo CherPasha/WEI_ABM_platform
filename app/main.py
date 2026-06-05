@@ -410,33 +410,54 @@ async def import_keyword_groups(project_id: str, file: UploadFile = File(...)):
     ).data
     group_by_name = {g["name"]: g["id"] for g in existing_groups}
 
+    # Pass 1 — resolve all groups (create if missing), collect group IDs
+    group_id_by_name: dict[str, str] = {}  # name → id
     groups_created = 0
     groups_updated = 0
-    keywords_added = 0
-    keywords_skipped = 0
 
     for row in parsed:
         group_name = row["group"]
-
+        if group_name in group_id_by_name:
+            # already resolved in a previous row with the same group name
+            continue
         if group_name in group_by_name:
-            group_id = group_by_name[group_name]
+            group_id_by_name[group_name] = group_by_name[group_name]
             groups_updated += 1
         else:
             result = supabase.table("keyword_groups").insert({
                 "project_id": project_id,
                 "name": group_name,
             }).execute()
+            if not result.data:
+                raise HTTPException(status_code=500, detail=f"Failed to create group '{group_name}'")
             group_id = result.data[0]["id"]
-            group_by_name[group_name] = group_id
+            group_id_by_name[group_name] = group_id
             groups_created += 1
 
-        existing_kws = (
+    # Between passes — batch-fetch all existing keywords for all resolved groups
+    all_group_ids = list(group_id_by_name.values())
+    all_existing_kws = []
+    if all_group_ids:
+        all_existing_kws = (
             supabase.table("keywords")
-            .select("keyword")
-            .eq("group_id", group_id)
+            .select("group_id, keyword")
+            .in_("group_id", all_group_ids)
             .execute()
         ).data
-        existing_set = {k["keyword"].lower() for k in existing_kws}
+
+    # Build per-group keyword sets (lowercase)
+    existing_kws_by_group: dict[str, set[str]] = {gid: set() for gid in all_group_ids}
+    for kw_row in all_existing_kws:
+        existing_kws_by_group[kw_row["group_id"]].add(kw_row["keyword"].lower())
+
+    # Pass 2 — insert missing keywords
+    keywords_added = 0
+    keywords_skipped = 0
+
+    for row in parsed:
+        group_name = row["group"]
+        group_id = group_id_by_name[group_name]
+        existing_set = existing_kws_by_group[group_id]
 
         for kw in row["keywords"]:
             if kw.lower() in existing_set:
