@@ -150,9 +150,14 @@
         <!-- Keyword Analysis -->
         <article>
             <h3>Keyword Analysis</h3>
-            <div style="display:flex; gap:0.5em; margin-bottom:1em;">
+            <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
                 <input type="text" id="new-group-name" placeholder="Group name (e.g. ABM)" style="margin:0;">
                 <button onclick="addKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
+                <button id="import-kw-btn" class="secondary" style="margin:0; white-space:nowrap;"
+                        onclick="document.getElementById('kw-import-input').click()">Import from file</button>
+                <input type="file" id="kw-import-input" accept=".xlsx,.xls" style="display:none"
+                       onchange="importKeywordFile(this)">
+                <span id="kw-import-status" style="font-size:0.85em; color:var(--muted-color);"></span>
             </div>
             <div id="keyword-groups-container"></div>
             <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
@@ -451,6 +456,37 @@
         async function deleteKeyword(keywordId) {
             await fetch(`/api/keywords/${keywordId}`, { method: "DELETE" });
             loadKeywordGroups();
+        }
+
+        async function importKeywordFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const btn = document.getElementById("import-kw-btn");
+            const status = document.getElementById("kw-import-status");
+            btn.disabled = true;
+            btn.setAttribute("aria-busy", "true");
+            status.textContent = "Importing...";
+            try {
+                const formData = new FormData();
+                formData.append("file", file);
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/keyword-groups/import`, {
+                    method: "POST",
+                    body: formData,
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    status.textContent = "Error: " + (data.detail || "Import failed");
+                } else {
+                    status.textContent = `Done: ${data.keywords_added} keywords added, ${data.keywords_skipped} skipped`;
+                    loadKeywordGroups();
+                }
+            } catch (err) {
+                status.textContent = "Error: " + err.message;
+            } finally {
+                btn.disabled = false;
+                btn.removeAttribute("aria-busy");
+                input.value = "";
+            }
         }
 
         async function runKeywordScan() {
