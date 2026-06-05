@@ -49,6 +49,30 @@ def _batch_insert(table: str, rows: list[dict]):
         )
 
 
+def _fetch_all_companies(session_id: str) -> list[dict]:
+    """Fetch all companies for a session, paginating past Supabase's 1000-row limit."""
+    all_rows = []
+    page_size = 1000
+    offset = 0
+    while True:
+        result = _supabase_call_with_retry(
+            lambda o=offset: supabase.table("companies")
+            .select("id, legal_name, known_names, website_url")
+            .eq("session_id", session_id)
+            .order("created_at")
+            .range(o, o + page_size - 1)
+            .execute()
+        )
+        rows = result.data
+        if not rows:
+            break
+        all_rows.extend(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return all_rows
+
+
 def _session_exists(session_id: str) -> bool:
     """Return True if the session row still exists in the DB."""
     result = _supabase_call_with_retry(
@@ -84,14 +108,7 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
         _batch_insert("companies", companies)
 
         # Fetch the inserted companies to get their UUIDs (ordered for consistent resume)
-        result = (
-            supabase.table("companies")
-            .select("id, legal_name, known_names, website_url")
-            .eq("session_id", session_id)
-            .order("created_at")
-            .execute()
-        )
-        db_companies = result.data
+        db_companies = _fetch_all_companies(session_id)
 
         # Read which stages are enabled
         flags = _get_session_flags(session_id)
@@ -292,14 +309,7 @@ def resume_session(session_id: str):
             return
 
         # Fetch companies in the same stable order used during initial processing
-        result = (
-            supabase.table("companies")
-            .select("id, legal_name, known_names, website_url")
-            .eq("session_id", session_id)
-            .order("created_at")
-            .execute()
-        )
-        db_companies = result.data
+        db_companies = _fetch_all_companies(session_id)
 
         # ── Stage 1: Resolve names (resume from names_done) ──
         if names_done < total:
@@ -328,14 +338,7 @@ def resume_session(session_id: str):
                 _update_session(session_id, names_done=i + 1)
 
             # Re-fetch so postings stage has up-to-date known_names
-            result = (
-                supabase.table("companies")
-                .select("id, legal_name, known_names, website_url")
-                .eq("session_id", session_id)
-                .order("created_at")
-                .execute()
-            )
-            db_companies = result.data
+            db_companies = _fetch_all_companies(session_id)
 
         # ── Stage 2: Find postings (resume from postings_done) ──
         if run_postings and postings_done < total:
