@@ -414,7 +414,7 @@
                     return;
                 }
                 container.innerHTML = '<div class="kw-list">' + words.map(w =>
-                    `<span class="kw-tag">${escapeHtml(w.word)}<button onclick="deleteStopWord('${w.id}')" title="Remove">&times;</button></span>`
+                    `<span class="kw-tag">${escapeHtml(w.word)}<button onclick="deleteStopWord('${escapeHtml(String(w.id))}')" title="Remove">&times;</button></span>`
                 ).join("") + '</div>';
             } catch (err) {
                 console.error("Failed to load stop words:", err);
@@ -441,7 +441,14 @@
         }
 
         async function deleteStopWord(wordId) {
-            await fetch(`/api/stop-words/${wordId}`, { method: "DELETE" });
+            if (!confirm("Remove this stop word?")) return;
+            const resp = await fetch(`/api/stop-words/${wordId}`, { method: "DELETE" });
+            if (!resp.ok) {
+                let data = {};
+                try { data = await resp.json(); } catch (_) {}
+                alert(data.detail || "Failed to remove stop word");
+                return;
+            }
             loadStopWords();
         }
 
