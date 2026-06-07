@@ -32,6 +32,9 @@ CREATE TABLE sessions (
     run_news         BOOLEAN     DEFAULT TRUE,
     run_contacts     BOOLEAN     DEFAULT TRUE,
     run_enrichment   BOOLEAN     DEFAULT TRUE,
+    run_verification  BOOLEAN     DEFAULT TRUE,
+    verification_done INTEGER     DEFAULT 0,
+    total_verification INTEGER    DEFAULT 0,
     created_at       TIMESTAMPTZ DEFAULT now()
 );
 
@@ -92,21 +95,34 @@ CREATE INDEX idx_postings_company ON postings(company_id);
 
 -- Contacts (from Hunter.io)
 CREATE TABLE contacts (
-    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id    UUID        REFERENCES sessions(id) ON DELETE CASCADE,
-    company_id    UUID        REFERENCES companies(id) ON DELETE CASCADE,
-    email         TEXT,
-    confidence    INTEGER,
-    first_name    TEXT,
-    last_name     TEXT,
-    position      TEXT,
-    position_raw  TEXT,
-    seniority     TEXT,
-    department    TEXT,
-    linkedin      TEXT,
-    phone_number  TEXT,
-    source        TEXT        DEFAULT 'hunter',
-    created_at    TIMESTAMPTZ DEFAULT now()
+    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id       UUID        REFERENCES sessions(id) ON DELETE CASCADE,
+    company_id       UUID        REFERENCES companies(id) ON DELETE CASCADE,
+    email            TEXT,
+    confidence       INTEGER,
+    first_name       TEXT,
+    last_name        TEXT,
+    position         TEXT,
+    position_raw     TEXT,
+    seniority        TEXT,
+    department       TEXT,
+    linkedin         TEXT,
+    phone_number     TEXT,
+    source           TEXT        DEFAULT 'hunter',
+    -- Email verification (Hunter.io Email Verifier API v2)
+    email_status     TEXT,
+    email_score      INTEGER,
+    email_regexp     BOOLEAN,
+    email_gibberish  BOOLEAN,
+    email_disposable BOOLEAN,
+    email_webmail    BOOLEAN,
+    email_mx_records BOOLEAN,
+    email_smtp_server BOOLEAN,
+    email_smtp_check BOOLEAN,
+    email_accept_all BOOLEAN,
+    email_block      BOOLEAN,
+    email_verified_at TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX idx_contacts_session ON contacts(session_id);
