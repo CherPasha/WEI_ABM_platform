@@ -326,7 +326,7 @@ def resume_session(session_id: str):
         # Fetch current session state
         result = (
             supabase.table("sessions")
-            .select("total_companies, names_done, postings_done, news_done, contacts_done, enrichment_done, project_id, run_postings, run_news, run_contacts, run_enrichment")
+            .select("total_companies, names_done, postings_done, news_done, contacts_done, enrichment_done, verification_done, project_id, run_postings, run_news, run_contacts, run_enrichment, run_verification")
             .eq("id", session_id)
             .execute()
         )
@@ -341,6 +341,8 @@ def resume_session(session_id: str):
         news_done = session["news_done"] or 0
         contacts_done = session["contacts_done"] or 0
         enrichment_done = session["enrichment_done"] or 0
+        verification_done = session.get("verification_done") or 0
+        run_verification = session.get("run_verification", True)
         project_id = session["project_id"]
 
         run_postings = session.get("run_postings", True)
@@ -500,6 +502,47 @@ def resume_session(session_id: str):
                 _update_session(session_id, enrichment_done=total)
         elif not run_enrichment and enrichment_done < total:
             _update_session(session_id, enrichment_done=total)
+
+        # ── Stage 6: Verify emails (resume from verification_done) ──
+        contacts_to_verify = _supabase_call_with_retry(
+            lambda: supabase.table("contacts")
+            .select("id, email")
+            .eq("session_id", session_id)
+            .not_.is_("email", "null")
+            .order("id")
+            .execute()
+        ).data
+
+        if run_verification and verification_done < len(contacts_to_verify):
+            _update_session(
+                session_id,
+                status="verifying_emails",
+                total_verification=len(contacts_to_verify),
+            )
+
+            for i, contact in enumerate(
+                contacts_to_verify[verification_done:], start=verification_done
+            ):
+                try:
+                    result = verify_email(contact["email"])
+                    if result is not None:
+                        _supabase_call_with_retry(
+                            lambda r=result, cid=contact["id"]: supabase.table("contacts")
+                            .update(r)
+                            .eq("id", cid)
+                            .execute()
+                        )
+                except Exception as e:
+                    logger.error(
+                        "Email verification failed for contact %s ('%s'): %s",
+                        contact["id"], contact["email"], e,
+                    )
+
+                time.sleep(0.2)
+                _update_session(session_id, verification_done=i + 1)
+
+        elif not run_verification and verification_done < len(contacts_to_verify):
+            _update_session(session_id, verification_done=0, total_verification=0)
 
         _update_session(session_id, status="completed")
         logger.info("Session %s resumed and completed successfully", session_id)
