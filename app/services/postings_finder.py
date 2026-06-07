@@ -41,8 +41,9 @@ def find_postings_by_search_term(search_term: str, token: str = "") -> list[dict
     headers = {
         "User-Agent": settings.HH_USER_AGENT,
         "HH-User-Agent": settings.HH_USER_AGENT,
-        "Authorization": f"Bearer {token}",
     }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
     while page_counter < MAX_PAGES:
         params = {
