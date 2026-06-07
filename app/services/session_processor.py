@@ -9,7 +9,7 @@ from app.services.company_parser import parse_xlsx_to_companies
 from app.services.name_resolver import find_company_real_name, NAME_UNAVAILABLE
 from app.services.postings_finder import find_all_postings_for_company
 from app.services.yandex_search import find_all_news_for_company
-from app.services.hunter_service import find_contacts_for_domain
+from app.services.hunter_service import find_contacts_for_domain, verify_email
 from app.services.contact_enrichment import enrich_contacts_for_company
 from app.services.llm import LLMClient
 
@@ -85,7 +85,7 @@ def _get_session_flags(session_id: str) -> dict:
     """Fetch the run_* flags for a session."""
     result = (
         supabase.table("sessions")
-        .select("run_postings, run_news, run_contacts, run_enrichment, project_id")
+        .select("run_postings, run_news, run_contacts, run_enrichment, run_verification, project_id")
         .eq("id", session_id)
         .execute()
     )
@@ -116,6 +116,7 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
         run_news = flags.get("run_news", True)
         run_contacts = flags.get("run_contacts", True)
         run_enrichment = flags.get("run_enrichment", True)
+        run_verification = flags.get("run_verification", True)
 
         # --- Step 2: Resolve company names ---
         # Always runs — needed by postings and news stages
@@ -266,6 +267,49 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
                 _update_session(session_id, enrichment_done=total)
         else:
             _update_session(session_id, enrichment_done=total)
+
+        # --- Step 6: Verify email addresses via Hunter.io ---
+        if not _session_exists(session_id):
+            logger.warning("Session %s was deleted during processing, aborting", session_id)
+            return
+
+        if run_verification:
+            contacts_to_verify = _supabase_call_with_retry(
+                lambda: supabase.table("contacts")
+                .select("id, email")
+                .eq("session_id", session_id)
+                .not_.is_("email", "null")
+                .order("id")
+                .execute()
+            ).data
+
+            _update_session(
+                session_id,
+                status="verifying_emails",
+                verification_done=0,
+                total_verification=len(contacts_to_verify),
+            )
+
+            for i, contact in enumerate(contacts_to_verify):
+                try:
+                    result = verify_email(contact["email"])
+                    if result is not None:
+                        _supabase_call_with_retry(
+                            lambda r=result, cid=contact["id"]: supabase.table("contacts")
+                            .update(r)
+                            .eq("id", cid)
+                            .execute()
+                        )
+                except Exception as e:
+                    logger.error(
+                        "Email verification failed for contact %s ('%s'): %s",
+                        contact["id"], contact["email"], e,
+                    )
+
+                time.sleep(0.2)  # Hunter.io rate limit: 300 req/min
+                _update_session(session_id, verification_done=i + 1)
+        else:
+            _update_session(session_id, verification_done=0, total_verification=0)
 
         # --- Done ---
         _update_session(session_id, status="completed")
