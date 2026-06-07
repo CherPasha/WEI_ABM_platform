@@ -2,11 +2,13 @@ import time
 import logging
 import re
 import requests
+from datetime import datetime, timezone
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 HUNTER_URL = "https://api.hunter.io/v2/domain-search"
+HUNTER_VERIFY_URL = "https://api.hunter.io/v2/email-verifier"
 
 
 def parse_hunter_item(item: dict) -> dict:
@@ -78,3 +80,57 @@ def find_contacts_for_domain(website_url: str) -> list[dict]:
     except Exception as e:
         logger.error("Error querying Hunter.io for '%s': %s", domain, e)
         return []
+
+
+def verify_email(email: str) -> dict | None:
+    """Verify an email address via Hunter.io Email Verifier API v2.
+
+    Returns a dict of verification fields ready to UPDATE into a contacts row,
+    or None if verification failed or timed out.
+
+    Handles HTTP 202 (verification in progress) by polling up to 3 times with
+    a 2-second delay between attempts.
+    """
+    params = {"email": email, "api_key": settings.HUNTER_API_KEY}
+
+    for attempt in range(3):
+        try:
+            response = requests.get(HUNTER_VERIFY_URL, params=params, timeout=30)
+
+            if response.status_code == 200:
+                data = response.json().get("data", {})
+                return {
+                    "email_status":      data.get("status"),
+                    "email_score":       data.get("score"),
+                    "email_regexp":      data.get("regexp"),
+                    "email_gibberish":   data.get("gibberish"),
+                    "email_disposable":  data.get("disposable"),
+                    "email_webmail":     data.get("webmail"),
+                    "email_mx_records":  data.get("mx_records"),
+                    "email_smtp_server": data.get("smtp_server"),
+                    "email_smtp_check":  data.get("smtp_check"),
+                    "email_accept_all":  data.get("accept_all"),
+                    "email_block":       data.get("block"),
+                    "email_verified_at": datetime.now(timezone.utc).isoformat(),
+                }
+
+            if response.status_code == 202:
+                logger.info(
+                    "Hunter.io email verification in progress for '%s' (attempt %d/3)",
+                    email, attempt + 1,
+                )
+                time.sleep(2)
+                continue
+
+            logger.warning(
+                "Hunter.io email verify returned %d for '%s': %s",
+                response.status_code, email, response.text[:200],
+            )
+            return None
+
+        except Exception as e:
+            logger.error("Error verifying email '%s': %s", email, e)
+            return None
+
+    logger.warning("Hunter.io email verification timed out after 3 polls for '%s'", email)
+    return None
