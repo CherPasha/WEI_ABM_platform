@@ -49,3 +49,15 @@ def test_find_postings_by_search_term_sends_auth_header():
     call_headers = mock_get.call_args[1]["headers"]
     assert call_headers["Authorization"] == "Bearer my_bearer_token"
     assert "HH-User-Agent" in call_headers
+
+
+def test_find_all_postings_for_company_fetches_token_once_and_passes_it():
+    with patch("app.services.postings_finder.get_app_token", return_value="shared_tok") as mock_token, \
+         patch("app.services.postings_finder.find_postings_by_search_term", return_value=[]) as mock_find:
+        from app.services.postings_finder import find_all_postings_for_company
+        find_all_postings_for_company(["Acme Ltd", "Acme"])
+
+    mock_token.assert_called_once()
+    assert mock_find.call_count == 2
+    for call in mock_find.call_args_list:
+        assert call[1].get("token") == "shared_tok"

@@ -120,13 +120,14 @@ def extract_posting_fields(item: dict, search_term: str) -> dict:
 
 def find_all_postings_for_company(known_names: list[str]) -> list[dict]:
     """Search hh.ru for all known names of a company, deduplicate by hh_id."""
+    token = get_app_token()
     seen_ids = set()
     all_postings = []
 
     for name in known_names:
         if not name or name == "Название не доступно":
             continue
-        raw_items = find_postings_by_search_term(name)
+        raw_items = find_postings_by_search_term(name, token=token)
         for item in raw_items:
             hh_id = str(item.get("id", ""))
             if hh_id not in seen_ids:
