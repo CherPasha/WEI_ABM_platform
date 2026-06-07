@@ -87,169 +87,198 @@
         <h1>ABM Platform</h1>
         <p>Upload a company list (.xlsx) to start processing.</p>
 
-        <!-- Target Roles -->
-        <article>
-            <h3>Target Roles for Contact Enrichment</h3>
-            <div id="roles-list" class="roles-list"></div>
-            <div style="display:flex; gap:0.5em; align-items:center; margin-top:0.5em;">
-                <input type="text" id="new-role-input" placeholder="Add role, e.g. CEO, CTO" style="margin:0; padding:0.3em 0.5em; font-size:0.9em;">
-                <button onclick="addRole()" style="margin:0; padding:0.3em 0.8em; font-size:0.85em; white-space:nowrap;">Add</button>
-            </div>
-        </article>
 
-        <!-- Upload Section -->
-        <article>
-            <h3>Upload File</h3>
-            <form id="upload-form">
-                <input type="file" id="file-input" accept=".xlsx,.xls,.csv" required>
+        <div class="tabs">
+            <input type="radio" id="tab-upload"    name="tab" checked>
+            <input type="radio" id="tab-keywords"  name="tab">
+            <input type="radio" id="tab-stopwords" name="tab">
 
-                <fieldset style="margin-top:0.8em;">
-                    <legend style="font-size:0.9em; font-weight:600;">Select processing stages:</legend>
-                    <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
-                        <input type="checkbox" id="chk-postings" checked style="margin:0;">
-                        Find job postings (hh.ru)
-                        <span style="color:var(--pico-muted-color); font-size:0.85em;">~5 sec/company</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
-                        <input type="checkbox" id="chk-news" checked style="margin:0;">
-                        Find news (Yandex)
-                        <span style="color:var(--pico-muted-color); font-size:0.85em;">~5 sec/company</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
-                        <input type="checkbox" id="chk-contacts" checked style="margin:0;">
-                        Find contacts (Hunter.io)
-                        <span style="color:var(--pico-muted-color); font-size:0.85em;">~6 sec/company</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
-                        <input type="checkbox" id="chk-enrichment" checked style="margin:0;">
-                        Find contacts (open sources)
-                        <span style="color:var(--pico-muted-color); font-size:0.85em;">~15 sec/company</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
-                        <input type="checkbox" id="chk-verification" checked style="margin:0;">
-                        Verify emails (Hunter.io)
-                        <span style="color:var(--pico-muted-color); font-size:0.85em;">~0.2 sec/contact</span>
-                    </label>
-                </fieldset>
+            <nav class="tab-nav">
+                <label for="tab-upload">Upload</label>
+                <label for="tab-keywords">Keywords</label>
+                <label for="tab-stopwords">Stop Words</label>
+            </nav>
 
-                <button type="submit" id="upload-btn" style="margin-top:0.5em;">Upload & Process</button>
-            </form>
-            <p id="error-msg"></p>
-        </article>
+            <!-- ── Upload panel ── -->
+            <div id="panel-upload">
 
-        <!-- Progress Section -->
-        <article class="progress-section" id="progress-section">
-            <h3>Processing: <span id="prog-filename">-</span></h3>
-            <table style="font-size:0.9em;">
-                <thead><tr><th>Stage</th><th>Progress</th><th></th></tr></thead>
-                <tbody>
-                    <tr>
-                        <td>Resolving names</td>
-                        <td><progress id="prog-names-bar" value="0" max="100" style="width:160px;"></progress></td>
-                        <td id="prog-names-text">&mdash;</td>
-                    </tr>
-                    <tr>
-                        <td>Job postings (hh.ru)</td>
-                        <td><progress id="prog-postings-bar" value="0" max="100" style="width:160px;"></progress></td>
-                        <td id="prog-postings-text">&mdash;</td>
-                    </tr>
-                    <tr>
-                        <td>News (Yandex)</td>
-                        <td><progress id="prog-news-bar" value="0" max="100" style="width:160px;"></progress></td>
-                        <td id="prog-news-text">&mdash;</td>
-                    </tr>
-                    <tr>
-                        <td>Contacts (Hunter.io)</td>
-                        <td><progress id="prog-contacts-bar" value="0" max="100" style="width:160px;"></progress></td>
-                        <td id="prog-contacts-text">&mdash;</td>
-                    </tr>
-                    <tr>
-                        <td>Contact Enrichment</td>
-                        <td><progress id="prog-enrichment-bar" value="0" max="100" style="width:160px;"></progress></td>
-                        <td id="prog-enrichment-text">&mdash;</td>
-                    </tr>
-                    <tr>
-                        <td>Email Verification</td>
-                        <td><progress id="prog-verification-bar" value="0" max="100" style="width:160px;"></progress></td>
-                        <td id="prog-verification-text">&mdash;</td>
-                    </tr>
-                </tbody>
-            </table>
-        </article>
+                <!-- Target Roles -->
+                <article>
+                    <h3>Target Roles for Contact Enrichment</h3>
+                    <div id="roles-list" class="roles-list"></div>
+                    <div style="display:flex; gap:0.5em; align-items:center; margin-top:0.5em;">
+                        <input type="text" id="new-role-input" placeholder="Add role, e.g. CEO, CTO" style="margin:0; padding:0.3em 0.5em; font-size:0.9em;">
+                        <button onclick="addRole()" style="margin:0; padding:0.3em 0.8em; font-size:0.85em; white-space:nowrap;">Add</button>
+                    </div>
+                </article>
 
-        <!-- Download Section -->
-        <article class="download-section" id="download-section">
-            <h3>Download Results</h3>
-            <div class="grid">
-                <a id="dl-postings" role="button" href="#">Download Postings (.xlsx)</a>
-                <a id="dl-news" role="button" class="secondary" href="#">Download News (.xlsx)</a>
-                <a id="dl-contacts" role="button" class="secondary" href="#">Download Contacts (.xlsx)</a>
-            </div>
-        </article>
+                <!-- Upload Section -->
+                <article>
+                    <h3>Upload File</h3>
+                    <form id="upload-form">
+                        <input type="file" id="file-input" accept=".xlsx,.xls,.csv" required>
 
-        <!-- Stop Words -->
-        <article>
-            <h3>Stop Words</h3>
-            <p style="font-size:0.85em; color:var(--pico-muted-color); margin-bottom:0.75em;">
-                Publications containing any stop word are excluded from keyword counts.
-            </p>
-            <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
-                <input type="text" id="new-stop-word" placeholder="Stop word..." style="margin:0;">
-                <button onclick="addStopWord()" style="margin:0; white-space:nowrap;">Add Stop Word</button>
-                <button id="import-sw-btn" class="secondary" style="margin:0; white-space:nowrap;"
-                        onclick="document.getElementById('sw-import-input').click()">Import from file</button>
-                <input type="file" id="sw-import-input" accept=".xlsx" style="display:none"
-                       onchange="importStopWordFile(this)">
-                <span id="sw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
-            </div>
-            <div id="stop-words-container"></div>
-        </article>
+                        <fieldset style="margin-top:0.8em;">
+                            <legend style="font-size:0.9em; font-weight:600;">Select processing stages:</legend>
+                            <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
+                                <input type="checkbox" id="chk-postings" checked style="margin:0;">
+                                Find job postings (hh.ru)
+                                <span style="color:var(--pico-muted-color); font-size:0.85em;">~5 sec/company</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
+                                <input type="checkbox" id="chk-news" checked style="margin:0;">
+                                Find news (Yandex)
+                                <span style="color:var(--pico-muted-color); font-size:0.85em;">~5 sec/company</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
+                                <input type="checkbox" id="chk-contacts" checked style="margin:0;">
+                                Find contacts (Hunter.io)
+                                <span style="color:var(--pico-muted-color); font-size:0.85em;">~6 sec/company</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
+                                <input type="checkbox" id="chk-enrichment" checked style="margin:0;">
+                                Find contacts (open sources)
+                                <span style="color:var(--pico-muted-color); font-size:0.85em;">~15 sec/company</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
+                                <input type="checkbox" id="chk-verification" checked style="margin:0;">
+                                Verify emails (Hunter.io)
+                                <span style="color:var(--pico-muted-color); font-size:0.85em;">~0.2 sec/contact</span>
+                            </label>
+                        </fieldset>
 
-        <!-- Keyword Analysis -->
-        <article>
-            <h3>Keyword Analysis</h3>
-            <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
-                <input type="text" id="new-group-name" placeholder="Group name (e.g. ABM)" style="margin:0;">
-                <button onclick="addKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
-                <button id="import-kw-btn" class="secondary" style="margin:0; white-space:nowrap;"
-                        onclick="document.getElementById('kw-import-input').click()">Import from file</button>
-                <input type="file" id="kw-import-input" accept=".xlsx" style="display:none"
-                       onchange="importKeywordFile(this)">
-                <span id="kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
-            </div>
-            <div id="keyword-groups-container"></div>
-            <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
-                Scan Postings & Download XLSX
-            </button>
-        </article>
+                        <button type="submit" id="upload-btn" style="margin-top:0.5em;">Upload &amp; Process</button>
+                    </form>
+                    <p id="error-msg"></p>
+                </article>
 
-        <!-- File History -->
-        <article>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3 style="margin:0;">Files</h3>
-                <button id="clear-all-btn" class="secondary" style="margin:0; padding:0.4em 1em; font-size:0.85em;">Clear All</button>
-            </div>
-            <div style="overflow-x: auto; margin-top:1em;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>File</th>
-                            <th>Names</th>
-                            <th>Postings</th>
-                            <th>News</th>
-                            <th>Contacts</th>
-                            <th>Enrichment</th>
-                            <th>Email Verif.</th>
-                            <th>Created</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="history-body">
-                        <tr><td colspan="8">Loading...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </article>
+                <!-- Progress Section -->
+                <article class="progress-section" id="progress-section">
+                    <h3>Processing: <span id="prog-filename">-</span></h3>
+                    <table style="font-size:0.9em;">
+                        <thead><tr><th>Stage</th><th>Progress</th><th></th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <td>Resolving names</td>
+                                <td><progress id="prog-names-bar" value="0" max="100" style="width:160px;"></progress></td>
+                                <td id="prog-names-text">&mdash;</td>
+                            </tr>
+                            <tr>
+                                <td>Job postings (hh.ru)</td>
+                                <td><progress id="prog-postings-bar" value="0" max="100" style="width:160px;"></progress></td>
+                                <td id="prog-postings-text">&mdash;</td>
+                            </tr>
+                            <tr>
+                                <td>News (Yandex)</td>
+                                <td><progress id="prog-news-bar" value="0" max="100" style="width:160px;"></progress></td>
+                                <td id="prog-news-text">&mdash;</td>
+                            </tr>
+                            <tr>
+                                <td>Contacts (Hunter.io)</td>
+                                <td><progress id="prog-contacts-bar" value="0" max="100" style="width:160px;"></progress></td>
+                                <td id="prog-contacts-text">&mdash;</td>
+                            </tr>
+                            <tr>
+                                <td>Contact Enrichment</td>
+                                <td><progress id="prog-enrichment-bar" value="0" max="100" style="width:160px;"></progress></td>
+                                <td id="prog-enrichment-text">&mdash;</td>
+                            </tr>
+                            <tr>
+                                <td>Email Verification</td>
+                                <td><progress id="prog-verification-bar" value="0" max="100" style="width:160px;"></progress></td>
+                                <td id="prog-verification-text">&mdash;</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </article>
+
+                <!-- Download Section -->
+                <article class="download-section" id="download-section">
+                    <h3>Download Results</h3>
+                    <div class="grid">
+                        <a id="dl-postings" role="button" href="#">Download Postings (.xlsx)</a>
+                        <a id="dl-news" role="button" class="secondary" href="#">Download News (.xlsx)</a>
+                        <a id="dl-contacts" role="button" class="secondary" href="#">Download Contacts (.xlsx)</a>
+                    </div>
+                </article>
+
+                <!-- File History -->
+                <article>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0;">Files</h3>
+                        <button id="clear-all-btn" class="secondary" style="margin:0; padding:0.4em 1em; font-size:0.85em;">Clear All</button>
+                    </div>
+                    <div style="overflow-x: auto; margin-top:1em;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>File</th>
+                                    <th>Names</th>
+                                    <th>Postings</th>
+                                    <th>News</th>
+                                    <th>Contacts</th>
+                                    <th>Enrichment</th>
+                                    <th>Email Verif.</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-body">
+                                <tr><td colspan="9">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+
+            </div><!-- /panel-upload -->
+
+            <!-- ── Keywords panel ── -->
+            <div id="panel-keywords">
+
+                <!-- Keyword Analysis -->
+                <article>
+                    <h3>Keyword Analysis</h3>
+                    <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
+                        <input type="text" id="new-group-name" placeholder="Group name (e.g. ABM)" style="margin:0;">
+                        <button onclick="addKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
+                        <button id="import-kw-btn" class="secondary" style="margin:0; white-space:nowrap;"
+                                onclick="document.getElementById('kw-import-input').click()">Import from file</button>
+                        <input type="file" id="kw-import-input" accept=".xlsx" style="display:none"
+                               onchange="importKeywordFile(this)">
+                        <span id="kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
+                    </div>
+                    <div id="keyword-groups-container"></div>
+                    <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
+                        Scan Postings &amp; Download XLSX
+                    </button>
+                </article>
+
+            </div><!-- /panel-keywords -->
+
+            <!-- ── Stop Words panel ── -->
+            <div id="panel-stopwords">
+
+                <!-- Stop Words -->
+                <article>
+                    <h3>Stop Words</h3>
+                    <p style="font-size:0.85em; color:var(--pico-muted-color); margin-bottom:0.75em;">
+                        Publications containing any stop word are excluded from keyword counts.
+                    </p>
+                    <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
+                        <input type="text" id="new-stop-word" placeholder="Stop word..." style="margin:0;">
+                        <button onclick="addStopWord()" style="margin:0; white-space:nowrap;">Add Stop Word</button>
+                        <button id="import-sw-btn" class="secondary" style="margin:0; white-space:nowrap;"
+                                onclick="document.getElementById('sw-import-input').click()">Import from file</button>
+                        <input type="file" id="sw-import-input" accept=".xlsx" style="display:none"
+                               onchange="importStopWordFile(this)">
+                        <span id="sw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
+                    </div>
+                    <div id="stop-words-container"></div>
+                </article>
+
+            </div><!-- /panel-stopwords -->
+
+        </div><!-- /tabs -->
     </main>
 
     <script>
