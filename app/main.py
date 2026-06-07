@@ -19,6 +19,21 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="ABM Platform")
 
+
+@app.on_event("startup")
+async def _log_config():
+    from app.config import settings
+    def _mask(val: str) -> str:
+        return (val[:4] + "…") if len(val) > 4 else ("SET" if val else "NOT SET")
+    logging.getLogger(__name__).info(
+        "Config check — SUPABASE=%s | OPENAI=%s | HUNTER=%s | YANDEX_KEY=%s | YANDEX_FOLDER=%s",
+        _mask(settings.SUPABASE_URL),
+        _mask(settings.OPENAI_API_KEY),
+        _mask(settings.HUNTER_API_KEY),
+        _mask(settings.YANDEX_SEARCH_API_KEY),
+        _mask(settings.yandex_folder_id),
+    )
+
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 

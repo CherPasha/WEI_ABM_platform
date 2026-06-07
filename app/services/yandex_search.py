@@ -83,7 +83,18 @@ def _request_search_page(query: str, page: int) -> str | None:
             backoff *= 2
             continue
 
-        logger.warning("Yandex Search returned status %s for %r", response.status_code, query)
+        if response.status_code in (401, 403):
+            logger.error(
+                "Yandex Search API auth failed (HTTP %s). "
+                "Check YANDEX_SEARCH_API_KEY and YANDEX_FOLDER_ID. "
+                "YANDEX_FOLDER_ID must be the Cloud folder ID (starts with b1g...), "
+                "NOT the API key ID (starts with aje...). "
+                "Current folder_id starts with: %r",
+                response.status_code,
+                settings.yandex_folder_id[:6] if settings.yandex_folder_id else "EMPTY",
+            )
+        else:
+            logger.warning("Yandex Search returned status %s for %r", response.status_code, query)
         return None
 
     logger.warning("Yandex Search gave up after retries for %r (page %s)", query, page)
