@@ -51,6 +51,19 @@ def test_find_postings_by_search_term_sends_auth_header():
     assert "HH-User-Agent" in call_headers
 
 
+def test_find_postings_by_search_term_no_auth_header_without_token():
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"items": [], "pages": 0}
+
+    with patch("app.services.postings_finder.requests.get", return_value=mock_resp) as mock_get:
+        from app.services.postings_finder import find_postings_by_search_term
+        find_postings_by_search_term("python developer")
+
+    call_headers = mock_get.call_args[1]["headers"]
+    assert "Authorization" not in call_headers
+
+
 def test_find_all_postings_for_company_fetches_token_once_and_passes_it():
     with patch("app.services.postings_finder.get_app_token", return_value="shared_tok") as mock_token, \
          patch("app.services.postings_finder.find_postings_by_search_term", return_value=[]) as mock_find:

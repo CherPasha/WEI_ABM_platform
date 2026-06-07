@@ -11,6 +11,10 @@ MAX_PAGES = 20  # Cap at 2000 postings per search term
 
 def get_app_token() -> str:
     """Obtain a client_credentials OAuth token from HH.ru."""
+    if not settings.HH_CLIENT_ID or not settings.HH_CLIENT_SECRET:
+        raise RuntimeError(
+            "HH_CLIENT_ID and HH_CLIENT_SECRET must be set to use the HH pipeline"
+        )
     response = requests.post(
         "https://api.hh.ru/token",
         data={
