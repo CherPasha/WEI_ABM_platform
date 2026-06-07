@@ -438,15 +438,23 @@ def find_all_news_for_company(known_names: list[str]) -> list[dict[str, Any]]:
         return []
 
     # 4. Scrape in one Playwright session.
+    # If Playwright is unavailable or crashes, fall back to search-result data only
+    # (title + snippet from Yandex; full_text stays None).
     urls = [r["url"] for r in unique]
-    scraped, stats = _run_async(_scrape_all(urls)) or ({}, Counter())
-
-    ok = stats.get("ok", 0) + stats.get("no_content", 0)
-    skipped = {k: v for k, v in stats.items() if k not in ("ok", "no_content")}
-    logger.info(
-        "News stats: search=%s unique=%s scraped_ok=%s skipped=%s reasons=%s",
-        len(search_results), len(unique), ok, sum(skipped.values()), dict(skipped) or "{}",
-    )
+    try:
+        scraped, stats = _run_async(_scrape_all(urls)) or ({}, Counter())
+        ok = stats.get("ok", 0) + stats.get("no_content", 0)
+        skipped = {k: v for k, v in stats.items() if k not in ("ok", "no_content")}
+        logger.info(
+            "News stats: search=%s unique=%s scraped_ok=%s skipped=%s reasons=%s",
+            len(search_results), len(unique), ok, sum(skipped.values()), dict(skipped) or "{}",
+        )
+    except Exception as exc:
+        logger.warning(
+            "Playwright scraping failed (%s) — saving %s search results without full text",
+            exc, len(unique),
+        )
+        scraped = {}
 
     # 5-6. Merge, apply best-effort freshness filter, build DB rows.
     rows: list[dict[str, Any]] = []
