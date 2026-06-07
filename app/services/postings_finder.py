@@ -33,11 +33,16 @@ def get_app_token() -> str:
     return token
 
 
-def find_postings_by_search_term(search_term: str) -> list[dict]:
+def find_postings_by_search_term(search_term: str, token: str = "") -> list[dict]:
     """Search hh.ru for job postings matching a search term. Returns raw API items."""
-    page_counter = 0  # hh.ru uses 0-based pagination
+    page_counter = 0
     listings = []
     rate_limit_retries = 3
+    headers = {
+        "User-Agent": settings.HH_USER_AGENT,
+        "HH-User-Agent": settings.HH_USER_AGENT,
+        "Authorization": f"Bearer {token}",
+    }
 
     while page_counter < MAX_PAGES:
         params = {
@@ -46,7 +51,7 @@ def find_postings_by_search_term(search_term: str) -> list[dict]:
             "page": page_counter,
         }
         try:
-            response = requests.get(BASE_URL, params=params, timeout=30)
+            response = requests.get(BASE_URL, params=params, headers=headers, timeout=30)
 
             if response.status_code == 200:
                 data = response.json()
@@ -54,7 +59,6 @@ def find_postings_by_search_term(search_term: str) -> list[dict]:
                 if not items:
                     break
                 listings.extend(items)
-                # Stop if we've reached the last page
                 pages_total = data.get("pages", 1)
                 if page_counter >= pages_total - 1:
                     break
@@ -63,7 +67,7 @@ def find_postings_by_search_term(search_term: str) -> list[dict]:
 
             elif response.status_code in (429, 503):
                 if rate_limit_retries > 0:
-                    wait = 60 * (4 - rate_limit_retries)  # 60, 120, 180s
+                    wait = 60 * (4 - rate_limit_retries)
                     logger.warning(
                         "hh.ru rate limited (status %d) for '%s'. Waiting %ds (%d retries left).",
                         response.status_code, search_term, wait, rate_limit_retries,

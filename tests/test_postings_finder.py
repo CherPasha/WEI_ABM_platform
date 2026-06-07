@@ -34,3 +34,18 @@ def test_get_app_token_raises_if_no_token_in_response():
         from app.services.postings_finder import get_app_token
         with pytest.raises(RuntimeError, match="access_token"):
             get_app_token()
+
+
+def test_find_postings_by_search_term_sends_auth_header():
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"items": [{"id": "1", "name": "Dev"}], "pages": 1}
+
+    with patch("app.services.postings_finder.requests.get", return_value=mock_resp) as mock_get:
+        from app.services.postings_finder import find_postings_by_search_term
+        result = find_postings_by_search_term("python developer", token="my_bearer_token")
+
+    assert len(result) == 1
+    call_headers = mock_get.call_args[1]["headers"]
+    assert call_headers["Authorization"] == "Bearer my_bearer_token"
+    assert "HH-User-Agent" in call_headers
