@@ -1,16 +1,15 @@
 import io
-import re
 
 import openpyxl
 
 
 def parse_keyword_xlsx(file_bytes: bytes) -> list[dict]:
     """
-    Parse an Excel file with two columns:
-      col 0 — keyword group name (str)
-      col 1 — keywords as quoted comma-separated string, e.g. "kw1", "kw2"
+    Parse an Excel file where each row is one keyword:
+      col 0 — keyword group name (may repeat across rows)
+      col 1 — single keyword
 
-    Returns list of {"group": str, "keywords": list[str]}.
+    Returns list of {"group": str, "keywords": list[str]}, one entry per group.
     Raises ValueError if file has fewer than 2 columns.
     """
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
@@ -19,21 +18,28 @@ def parse_keyword_xlsx(file_bytes: bytes) -> list[dict]:
     if ws.max_column is not None and ws.max_column < 2:
         raise ValueError("File must have at least 2 columns")
 
-    results = []
+    groups: dict[str, list[str]] = {}
+    group_order: list[str] = []
+
     for row in ws.iter_rows(values_only=True):
+        if len(row) < 2:
+            continue
         raw_group = row[0]
+        raw_kw = row[1]
+
         group_name = str(raw_group).strip() if raw_group is not None else ""
-        if not group_name:
+        keyword = str(raw_kw).strip() if raw_kw is not None else ""
+
+        if not group_name or not keyword:
             continue
 
-        raw_kw = row[1]
-        kw_cell = str(raw_kw) if raw_kw is not None else ""
-        keywords = re.findall(r'"([^"]+)"', kw_cell)
-
-        results.append({"group": group_name, "keywords": keywords})
+        if group_name not in groups:
+            groups[group_name] = []
+            group_order.append(group_name)
+        groups[group_name].append(keyword)
 
     wb.close()
-    return results
+    return [{"group": g, "keywords": groups[g]} for g in group_order]
 
 
 def parse_stop_word_xlsx(file_bytes: bytes) -> list[str]:
