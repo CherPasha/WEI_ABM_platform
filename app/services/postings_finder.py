@@ -1,11 +1,35 @@
 import time
 import logging
 import requests
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.hh.ru/vacancies"
 MAX_PAGES = 20  # Cap at 2000 postings per search term
+
+
+def get_app_token() -> str:
+    """Obtain a client_credentials OAuth token from HH.ru."""
+    response = requests.post(
+        "https://api.hh.ru/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": settings.HH_CLIENT_ID,
+            "client_secret": settings.HH_CLIENT_SECRET,
+        },
+        headers={
+            "User-Agent": settings.HH_USER_AGENT,
+            "HH-User-Agent": settings.HH_USER_AGENT,
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        timeout=45,
+    )
+    response.raise_for_status()
+    token = response.json().get("access_token")
+    if not token:
+        raise RuntimeError(f"HH did not return access_token: {response.json()}")
+    return token
 
 
 def find_postings_by_search_term(search_term: str) -> list[dict]:
