@@ -49,6 +49,36 @@
         color: var(--pico-color-red-500); font-size: 1em; line-height: 1; width: auto;
     }
     .roles-list { display: flex; flex-wrap: wrap; gap: 0.4em; margin: 0.5em 0; }
+        /* ── Tabs ── */
+        .tabs > input[type="radio"] { display: none; }
+        .tabs > div[id^="panel-"] { display: none; }
+
+        #tab-upload:checked    ~ #panel-upload    { display: block; }
+        #tab-keywords:checked  ~ #panel-keywords  { display: block; }
+        #tab-stopwords:checked ~ #panel-stopwords { display: block; }
+
+        .tab-nav {
+            display: flex;
+            border-bottom: 2px solid var(--pico-muted-border-color);
+            margin-bottom: 1.5em;
+            gap: 0;
+        }
+        .tab-nav label {
+            padding: 0.6em 1.5em;
+            cursor: pointer;
+            font-weight: 500;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            color: var(--pico-muted-color);
+        }
+        .tab-nav label:hover { color: var(--pico-color); }
+
+        #tab-upload:checked    ~ .tab-nav label[for="tab-upload"],
+        #tab-keywords:checked  ~ .tab-nav label[for="tab-keywords"],
+        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"] {
+            border-bottom-color: var(--pico-primary);
+            color: var(--pico-primary);
+        }
     </style>
 </head>
 <body>
