@@ -139,7 +139,7 @@ async def upload_file(
 async def list_sessions(project_id: str):
     result = (
         supabase.table("sessions")
-        .select("id, filename, status, total_companies, names_done, postings_done, news_done, contacts_done, enrichment_done, created_at")
+        .select("id, filename, status, total_companies, names_done, postings_done, news_done, contacts_done, enrichment_done, verification_done, total_verification, created_at")
         .eq("project_id", project_id)
         .order("created_at", desc=True)
         .limit(50)
@@ -155,7 +155,7 @@ async def list_sessions(project_id: str):
 async def session_status(session_id: str):
     result = (
         supabase.table("sessions")
-        .select("id, filename, status, error_message, total_companies, names_done, postings_done, news_done, contacts_done, enrichment_done")
+        .select("id, filename, status, error_message, total_companies, names_done, postings_done, news_done, contacts_done, enrichment_done, verification_done, total_verification")
         .eq("id", session_id)
         .execute()
     )

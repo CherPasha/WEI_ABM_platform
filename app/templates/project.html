@@ -133,6 +133,11 @@
                         <td><progress id="prog-enrichment-bar" value="0" max="100" style="width:160px;"></progress></td>
                         <td id="prog-enrichment-text">&mdash;</td>
                     </tr>
+                    <tr>
+                        <td>Email Verification</td>
+                        <td><progress id="prog-verification-bar" value="0" max="100" style="width:160px;"></progress></td>
+                        <td id="prog-verification-text">&mdash;</td>
+                    </tr>
                 </tbody>
             </table>
         </article>
@@ -199,6 +204,7 @@
                             <th>News</th>
                             <th>Contacts</th>
                             <th>Enrichment</th>
+                            <th>Email Verif.</th>
                             <th>Created</th>
                             <th>Actions</th>
                         </tr>
@@ -217,7 +223,7 @@
         let currentSessionId = null;
         let pollInterval = null;
 
-        const ACTIVE_STATUSES = new Set(["resolving_names", "finding_postings", "finding_news", "finding_contacts", "enriching_contacts", "resuming"]);
+        const ACTIVE_STATUSES = new Set(["resolving_names", "finding_postings", "finding_news", "finding_contacts", "enriching_contacts", "verifying_emails", "resuming"]);
 
         function stageCell(done, total, activeStatus, myStatus) {
             if (!total) return '<span style="color:#aaa">&mdash;</span>';
@@ -226,6 +232,16 @@
             if (isDone) return `<span class="status-badge status-completed">\u2713 ${total}</span>`;
             if (isActive || (ACTIVE_STATUSES.has(activeStatus) && done > 0 && !isDone))
                 return `<span class="status-badge status-processing">${done} / ${total}</span>`;
+            if (done > 0) return `<span class="status-badge status-processing">${done} / ${total}</span>`;
+            return '<span style="color:#aaa">&mdash;</span>';
+        }
+
+        function verificationCell(done, total, activeStatus) {
+            if (!total) return '<span style="color:#aaa">&mdash;</span>';
+            const isDone = done >= total;
+            const isActive = activeStatus === "verifying_emails";
+            if (isDone) return `<span class="status-badge status-completed">✓ ${total}</span>`;
+            if (isActive) return `<span class="status-badge status-processing">${done} / ${total}</span>`;
             if (done > 0) return `<span class="status-badge status-processing">${done} / ${total}</span>`;
             return '<span style="color:#aaa">&mdash;</span>';
         }
@@ -305,6 +321,14 @@
                 setStage("contacts",   data.contacts_done   || 0);
                 setStage("enrichment", data.enrichment_done || 0);
 
+                // Verification uses total_verification as denominator, not total_companies
+                const verTotal = data.total_verification || 0;
+                const verDone  = data.verification_done  || 0;
+                const verPct   = verTotal > 0 ? Math.round((verDone / verTotal) * 100) : 0;
+                document.getElementById("prog-verification-bar").value = verPct;
+                document.getElementById("prog-verification-text").textContent =
+                    verTotal ? `${verDone} / ${verTotal}` : "\u2014";
+
                 if (data.status === "completed") {
                     clearInterval(pollInterval);
                     showDownloadLinks(sessionId);
@@ -338,7 +362,7 @@
                 const tbody = document.getElementById("history-body");
 
                 if (!sessions.length) {
-                    tbody.innerHTML = '<tr><td colspan="8">No files yet. Upload one above.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="9">No files yet. Upload one above.</td></tr>';
                     return;
                 }
 
@@ -346,7 +370,7 @@
                     const date = s.created_at ? new Date(s.created_at).toLocaleString() : "-";
                     const total = s.total_companies || 0;
                     const isComplete = s.status === "completed";
-                    const isActive = ["uploading", "parsing", "resolving_names", "finding_postings", "finding_news", "finding_contacts", "enriching_contacts", "resuming"].includes(s.status);
+                    const isActive = ["uploading", "parsing", "resolving_names", "finding_postings", "finding_news", "finding_contacts", "enriching_contacts", "verifying_emails", "resuming"].includes(s.status);
                     const canResume = !isComplete && !isActive && total > 0;
 
                     const dlLinks = isComplete
@@ -368,6 +392,7 @@
                         <td>${stageCell(s.news_done, total, s.status, "finding_news")}</td>
                         <td>${stageCell(s.contacts_done, total, s.status, "finding_contacts")}</td>
                         <td>${stageCell(s.enrichment_done, total, s.status, "enriching_contacts")}</td>
+                        <td>${verificationCell(s.verification_done, s.total_verification, s.status)}</td>
                         <td>${date}</td>
                         <td>${actions}</td>
                     </tr>`;
