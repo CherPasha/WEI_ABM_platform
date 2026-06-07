@@ -21,6 +21,11 @@ class Settings:
     PLAYWRIGHT_TIMEOUT_MS: int = int(os.getenv("PLAYWRIGHT_TIMEOUT_MS", "20000"))
     PLAYWRIGHT_CONCURRENCY: int = int(os.getenv("PLAYWRIGHT_CONCURRENCY", "4"))
 
+    # ── HH.ru API (поиск вакансий) ──
+    HH_CLIENT_ID: str = os.getenv("HH_CLIENT_ID", "")
+    HH_CLIENT_SECRET: str = os.getenv("HH_CLIENT_SECRET", "")
+    HH_USER_AGENT: str = os.getenv("HH_USER_AGENT", "WEI-Group-Vacancy-Analysis/0.1 (https://weigroup.ru)")
+
     @property
     def yandex_folder_id(self) -> str:
         """Yandex Cloud folderId. Prefers YANDEX_FOLDER_ID, falls back to the
