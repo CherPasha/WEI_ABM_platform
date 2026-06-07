@@ -10,6 +10,9 @@
 # LibreOffice lock files
 .~lock.*
 
+# IDE / tooling
+.claude/
+
 # Python
 .venv/
 __pycache__/
@@ -20,11 +23,13 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
+# Logs
+*.log
+logs/
+
 # Большие датасеты и файлы с данными
-postings_3.xlsx
+*.xlsx
 datasets/
 kontur_data/
 hunter_emails/
-data_template.xlsx
-WEI_GROUP_*.xlsx
-ABM_emails*.xlsx
+data_trial/
