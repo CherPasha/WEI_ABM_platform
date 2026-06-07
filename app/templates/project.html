@@ -684,14 +684,39 @@
             btn.setAttribute("aria-busy", "true");
             btn.disabled = true;
             try {
-                const resp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/download`);
-                const contentType = resp.headers.get("content-type") || "";
-                if (contentType.includes("application/json")) {
-                    const err = await resp.json();
-                    alert(err.error || "Scan failed");
+                // Start the scan as a background job
+                const startResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/start`, {method: "POST"});
+                if (!startResp.ok) {
+                    const err = await startResp.json().catch(() => ({}));
+                    alert(err.detail || err.error || "Failed to start scan");
                     return;
                 }
-                const blob = await resp.blob();
+                const {job_id} = await startResp.json();
+
+                // Poll until done
+                while (true) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    const statusResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/${job_id}/status`);
+                    const status = await statusResp.json();
+                    if (status.status === "done") break;
+                    if (status.status === "error") {
+                        alert("Scan failed: " + (status.error || "Unknown error"));
+                        return;
+                    }
+                    if (status.status === "not_found") {
+                        alert("Scan job expired — please try again");
+                        return;
+                    }
+                }
+
+                // Download the result
+                const dlResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/${job_id}/download`);
+                if (!dlResp.ok) {
+                    const err = await dlResp.json().catch(() => ({}));
+                    alert(err.detail || "Download failed");
+                    return;
+                }
+                const blob = await dlResp.blob();
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;

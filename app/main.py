@@ -1,5 +1,7 @@
 import io
 import logging
+import time
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -447,29 +449,34 @@ async def import_keyword_groups(project_id: str, file: UploadFile = File(...)):
     ).data
     group_by_name = {g["name"]: g["id"] for g in existing_groups}
 
-    # Pass 1 — resolve all groups (create if missing), collect group IDs
+    # Pass 1 — resolve all groups (create missing ones in a single batch insert)
     group_id_by_name: dict[str, str] = {}  # name → id
-    groups_created = 0
-    groups_updated = 0
 
+    # Preserve order while deduplicating group names
+    seen: set[str] = set()
+    ordered_group_names: list[str] = []
     for row in parsed:
-        group_name = row["group"]
-        if group_name in group_id_by_name:
-            # already resolved in a previous row with the same group name
-            continue
-        if group_name in group_by_name:
-            group_id_by_name[group_name] = group_by_name[group_name]
-            groups_updated += 1
-        else:
-            result = supabase.table("keyword_groups").insert({
-                "project_id": project_id,
-                "name": group_name,
-            }).execute()
-            if not result.data:
-                raise HTTPException(status_code=500, detail=f"Failed to create group '{group_name}'")
-            group_id = result.data[0]["id"]
-            group_id_by_name[group_name] = group_id
-            groups_created += 1
+        if row["group"] not in seen:
+            seen.add(row["group"])
+            ordered_group_names.append(row["group"])
+
+    existing_names = [n for n in ordered_group_names if n in group_by_name]
+    new_names = [n for n in ordered_group_names if n not in group_by_name]
+
+    for name in existing_names:
+        group_id_by_name[name] = group_by_name[name]
+
+    if new_names:
+        result = supabase.table("keyword_groups").insert([
+            {"project_id": project_id, "name": name} for name in new_names
+        ]).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create keyword groups")
+        for g in result.data:
+            group_id_by_name[g["name"]] = g["id"]
+
+    groups_created = len(new_names)
+    groups_updated = len(existing_names)
 
     # Between passes — batch-fetch all existing keywords for all resolved groups
     # Chunk by 50 IDs to avoid URL length limits; paginate to bypass 1000-row cap.
@@ -619,17 +626,55 @@ async def import_stop_words(project_id: str, file: UploadFile = File(...)):
 
 # ──────────────────────── Keyword Scan ────────────────────────
 
+# In-memory job store: job_id -> {status, result, error, ts}
+_scan_jobs: dict[str, dict] = {}
+_SCAN_JOB_TTL = 600  # seconds before an unclaimed job is discarded
 
-@app.get("/api/projects/{project_id}/keyword-scan/download")
-async def keyword_scan_download(project_id: str):
+
+def _run_scan_task(job_id: str, project_id: str) -> None:
     try:
         scan_result = scan_project_keywords(project_id)
+        buffer = generate_keyword_xlsx(scan_result)
+        _scan_jobs[job_id] = {"status": "done", "result": buffer.getvalue(), "error": None, "ts": time.time()}
     except ValueError as e:
-        return {"error": str(e)}
+        _scan_jobs[job_id] = {"status": "error", "result": None, "error": str(e), "ts": time.time()}
+    except Exception as e:
+        logging.getLogger(__name__).exception("Keyword scan failed for project %s", project_id)
+        _scan_jobs[job_id] = {"status": "error", "result": None, "error": "Scan failed unexpectedly", "ts": time.time()}
 
-    buffer = generate_keyword_xlsx(scan_result)
+
+@app.post("/api/projects/{project_id}/keyword-scan/start")
+async def keyword_scan_start(project_id: str, background_tasks: BackgroundTasks):
+    job_id = str(uuid.uuid4())
+    _scan_jobs[job_id] = {"status": "running", "result": None, "error": None, "ts": time.time()}
+    background_tasks.add_task(_run_scan_task, job_id, project_id)
+    return {"job_id": job_id}
+
+
+@app.get("/api/projects/{project_id}/keyword-scan/{job_id}/status")
+async def keyword_scan_job_status(project_id: str, job_id: str):
+    now = time.time()
+    stale = [jid for jid, j in list(_scan_jobs.items()) if now - j["ts"] > _SCAN_JOB_TTL]
+    for jid in stale:
+        _scan_jobs.pop(jid, None)
+
+    job = _scan_jobs.get(job_id)
+    if not job:
+        return {"status": "not_found"}
+    return {"status": job["status"], "error": job.get("error")}
+
+
+@app.get("/api/projects/{project_id}/keyword-scan/{job_id}/download")
+async def keyword_scan_job_download(project_id: str, job_id: str):
+    job = _scan_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+    if job["status"] != "done":
+        raise HTTPException(status_code=409, detail=f"Job not ready: {job['status']}")
+    data = job.pop("result")
+    _scan_jobs.pop(job_id, None)
     return StreamingResponse(
-        buffer,
+        io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=keyword_analysis_{project_id[:8]}.xlsx"},
     )
