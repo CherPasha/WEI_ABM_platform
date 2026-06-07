@@ -26,9 +26,10 @@ def get_app_token() -> str:
         timeout=45,
     )
     response.raise_for_status()
-    token = response.json().get("access_token")
+    payload = response.json()
+    token = payload.get("access_token")
     if not token:
-        raise RuntimeError(f"HH did not return access_token: {response.json()}")
+        raise RuntimeError(f"HH did not return access_token: {payload}")
     return token
 
 
