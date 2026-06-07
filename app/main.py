@@ -359,13 +359,23 @@ async def list_keyword_groups(project_id: str):
 
     group_ids = [g["id"] for g in groups]
     keywords = []
-    if group_ids:
-        keywords = (
-            supabase.table("keywords")
-            .select("id, group_id, keyword")
-            .in_("group_id", group_ids)
-            .execute()
-        ).data
+    # Fetch in chunks of 50 IDs to stay under URL length limits,
+    # and paginate each chunk to bypass the 1000-row default cap.
+    for i in range(0, len(group_ids), 50):
+        chunk = group_ids[i:i + 50]
+        offset = 0
+        while True:
+            batch = (
+                supabase.table("keywords")
+                .select("id, group_id, keyword")
+                .in_("group_id", chunk)
+                .range(offset, offset + 999)
+                .execute()
+            ).data
+            keywords.extend(batch)
+            if len(batch) < 1000:
+                break
+            offset += 1000
 
     for g in groups:
         g["keywords"] = [k for k in keywords if k["group_id"] == g["id"]]
@@ -462,15 +472,24 @@ async def import_keyword_groups(project_id: str, file: UploadFile = File(...)):
             groups_created += 1
 
     # Between passes — batch-fetch all existing keywords for all resolved groups
+    # Chunk by 50 IDs to avoid URL length limits; paginate to bypass 1000-row cap.
     all_group_ids = list(group_id_by_name.values())
     all_existing_kws = []
-    if all_group_ids:
-        all_existing_kws = (
-            supabase.table("keywords")
-            .select("group_id, keyword")
-            .in_("group_id", all_group_ids)
-            .execute()
-        ).data
+    for i in range(0, len(all_group_ids), 50):
+        chunk = all_group_ids[i:i + 50]
+        offset = 0
+        while True:
+            batch = (
+                supabase.table("keywords")
+                .select("group_id, keyword")
+                .in_("group_id", chunk)
+                .range(offset, offset + 999)
+                .execute()
+            ).data
+            all_existing_kws.extend(batch)
+            if len(batch) < 1000:
+                break
+            offset += 1000
 
     # Build per-group keyword sets (lowercase)
     existing_kws_by_group: dict[str, set[str]] = {gid: set() for gid in all_group_ids}
