@@ -106,6 +106,7 @@ async def upload_file(
     run_news: bool = Form(True),
     run_contacts: bool = Form(True),
     run_enrichment: bool = Form(True),
+    run_verification: bool = Form(True),
 ):
     if not file.filename.endswith((".xlsx", ".xls", ".csv")):
         return {"error": "Only .xlsx/.xls/.csv files are accepted"}
@@ -121,6 +122,7 @@ async def upload_file(
         "run_news": run_news,
         "run_contacts": run_contacts,
         "run_enrichment": run_enrichment,
+        "run_verification": run_verification,
     }).execute()
 
     session_id = result.data[0]["id"]
@@ -255,6 +257,16 @@ async def download_postings(session_id: str):
 @app.get("/api/sessions/{session_id}/contacts/download")
 async def download_contacts(session_id: str):
     rows = _query_all_rows("contacts", session_id)
+    if not rows:
+        return {"error": "No contacts found for this session"}
+
+    # Hide contacts that failed email verification.
+    # Contacts with email_status=None (not yet verified) are kept.
+    _KEEP_STATUSES = {"valid", "accept_all"}
+    rows = [
+        r for r in rows
+        if r.get("email_status") is None or r.get("email_status") in _KEEP_STATUSES
+    ]
     if not rows:
         return {"error": "No contacts found for this session"}
 
