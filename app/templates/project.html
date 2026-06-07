@@ -95,6 +95,11 @@
                         Find contacts (open sources)
                         <span style="color:var(--pico-muted-color); font-size:0.85em;">~15 sec/company</span>
                     </label>
+                    <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
+                        <input type="checkbox" id="chk-verification" checked style="margin:0;">
+                        Verify emails (Hunter.io)
+                        <span style="color:var(--pico-muted-color); font-size:0.85em;">~0.2 sec/contact</span>
+                    </label>
                 </fieldset>
 
                 <button type="submit" id="upload-btn" style="margin-top:0.5em;">Upload & Process</button>
@@ -266,6 +271,7 @@
             formData.append("run_news", document.getElementById("chk-news").checked);
             formData.append("run_contacts", document.getElementById("chk-contacts").checked);
             formData.append("run_enrichment", document.getElementById("chk-enrichment").checked);
+            formData.append("run_verification", document.getElementById("chk-verification").checked);
 
             try {
                 const resp = await fetch(`/api/projects/${PROJECT_ID}/sessions/upload`, {
