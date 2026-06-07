@@ -16,7 +16,7 @@ def parse_keyword_xlsx(file_bytes: bytes) -> list[dict]:
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
     ws = wb.active
 
-    if ws.max_column < 2:
+    if not ws.max_column or ws.max_column < 2:
         raise ValueError("File must have at least 2 columns")
 
     results = []
