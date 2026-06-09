@@ -18,7 +18,6 @@
         .status-failed { background: #f8d7da; color: #721c24; }
         .status-processing { background: #fff3cd; color: #856404; }
         .progress-section { display: none; }
-        .download-section { display: none; }
         #error-msg { color: var(--pico-color-red-500); display: none; }
         table { font-size: 0.9em; }
         .back-link { font-size: 0.9em; text-decoration: none; }
@@ -458,7 +457,6 @@
 
                 currentSessionId = data.session_id;
                 document.getElementById("progress-section").style.display = "block";
-                document.getElementById("download-section").style.display = "none";
                 startPolling(currentSessionId);
             } catch (err) {
                 errorEl.textContent = "Upload failed: " + err.message;
@@ -497,8 +495,8 @@
 
                 if (data.status === "completed") {
                     clearInterval(pollInterval);
-                    showDownloadLinks(sessionId);
                     loadHistory();
+                    refreshTabStates();
                 } else if (data.status === "failed") {
                     clearInterval(pollInterval);
                     const errorEl = document.getElementById("error-msg");
@@ -509,14 +507,6 @@
             } catch (err) {
                 console.error("Polling error:", err);
             }
-        }
-
-        // ---- Downloads ----
-        function showDownloadLinks(sessionId) {
-            const section = document.getElementById("download-section");
-            section.style.display = "block";
-            document.getElementById("dl-postings").href = `/api/sessions/${sessionId}/postings/download`;
-            document.getElementById("dl-news").href = `/api/sessions/${sessionId}/news/download`;
         }
 
         // ---- History ----
@@ -571,7 +561,6 @@
             if (data.error) { alert(data.error); return; }
             currentSessionId = sessionId;
             document.getElementById("progress-section").style.display = "block";
-            document.getElementById("download-section").style.display = "none";
             document.getElementById("error-msg").style.display = "none";
             startPolling(sessionId);
             loadHistory();
@@ -620,6 +609,7 @@
             if (resp.ok) {
                 input.value = "";
                 loadStopWords();
+                refreshTabStates();
             } else {
                 let data = {};
                 try { data = await resp.json(); } catch (_) {}
@@ -637,6 +627,7 @@
                 return;
             }
             loadStopWords();
+            refreshTabStates();
         }
 
         async function importStopWordFile(input) {
@@ -661,6 +652,7 @@
                 } else {
                     status.textContent = `Done: ${data.words_added} added, ${data.words_skipped} skipped`;
                     loadStopWords();
+                    refreshTabStates();
                 }
             } catch (err) {
                 status.textContent = "Error: " + err.message;
@@ -718,12 +710,14 @@
             });
             input.value = "";
             loadKeywordGroups();
+            refreshTabStates();
         }
 
         async function deleteKeywordGroup(groupId) {
             if (!confirm("Delete this keyword group and all its keywords?")) return;
             await fetch(`/api/keyword-groups/${groupId}`, { method: "DELETE" });
             loadKeywordGroups();
+            refreshTabStates();
         }
 
         async function addKeyword(groupId) {
@@ -737,6 +731,7 @@
             });
             input.value = "";
             loadKeywordGroups();
+            refreshTabStates();
         }
 
         async function deleteKeyword(keywordId) {
@@ -766,6 +761,7 @@
                 } else {
                     status.textContent = `Done: ${data.groups_created} groups, ${data.keywords_added} keywords added, ${data.keywords_skipped} skipped`;
                     loadKeywordGroups();
+                    refreshTabStates();
                 }
             } catch (err) {
                 status.textContent = "Error: " + err.message;
@@ -877,12 +873,14 @@
             input.value = "";
             renderRoles();
             await saveRoles();
+            refreshTabStates();
         }
 
         async function removeRole(idx) {
             projectRoles.splice(idx, 1);
             renderRoles();
             await saveRoles();
+            refreshTabStates();
         }
 
         async function importRolesFile(input) {
@@ -907,6 +905,7 @@
                 } else {
                     status.textContent = `Done: ${data.added} added, ${data.skipped} skipped`;
                     loadRoles();
+                    refreshTabStates();
                 }
             } catch (err) {
                 status.textContent = "Error: " + err.message;
@@ -964,7 +963,6 @@
                     return;
                 }
                 document.getElementById("contact-scan-progress").style.display = "block";
-                document.getElementById("dl-contacts-btn").style.display = "none";
                 document.getElementById("scan-contacts-status").textContent = "";
                 startContactScanPolling();
             } catch (err) {
@@ -1018,7 +1016,7 @@
                     statusEl.textContent =
                         `Completed — ${data.contacts_added || 0} contacts added`;
                     statusEl.style.color = "var(--pico-color-green-500)";
-                    document.getElementById("dl-contacts-btn").style.display = "inline-block";
+                    refreshTabStates();
                 } else if (data.status === "failed") {
                     clearInterval(contactScanPollInterval);
                     btn.disabled = false;
@@ -1174,9 +1172,6 @@
                     startContactScanPolling();
                 } else {
                     pollContactScan();
-                    if (data.status === "completed") {
-                        document.getElementById("dl-contacts-btn").style.display = "inline-block";
-                    }
                 }
             })
             .catch(() => {});
