@@ -263,7 +263,9 @@ def run_contact_scan(scan_id: str) -> None:
             try:
                 result = verify_email(contact["email"])
                 if result is not None:
-                    supabase.table("contacts").update(result).eq("id", contact["id"]).execute()
+                    _supabase_call_with_retry(
+                        lambda cid=contact["id"], r=result: supabase.table("contacts").update(r).eq("id", cid).execute()
+                    )
             except Exception as e:
                 logger.error(
                     "Verification failed for contact %s ('%s'): %s",
