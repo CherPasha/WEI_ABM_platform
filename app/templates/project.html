@@ -54,32 +54,88 @@
         .tabs > div[id^="panel-"] { display: none; }
 
         #tab-upload:checked    ~ #panel-upload    { display: block; }
-        #tab-keywords:checked  ~ #panel-keywords  { display: block; }
         #tab-stopwords:checked ~ #panel-stopwords { display: block; }
+        #tab-keywords:checked  ~ #panel-keywords  { display: block; }
         #tab-roles:checked     ~ #panel-roles     { display: block; }
+        #tab-export:checked    ~ #panel-export    { display: block; }
 
+        /* ── Step bar ── */
         .tab-nav {
             display: flex;
-            border-bottom: 2px solid var(--pico-muted-border-color);
+            align-items: center;
             margin-bottom: 1.5em;
             gap: 0;
+            border-bottom: none;
+            flex-wrap: wrap;
         }
         .tab-nav label {
-            padding: 0.6em 1.5em;
+            display: flex;
+            align-items: center;
+            gap: 0.4em;
+            padding: 0.5em 0.6em;
             cursor: pointer;
             font-weight: 500;
-            border-bottom: 3px solid transparent;
-            margin-bottom: -2px;
             color: var(--pico-muted-color);
         }
         .tab-nav label:hover { color: var(--pico-color); }
+        .step-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.7em;
+            height: 1.7em;
+            border-radius: 50%;
+            background: var(--pico-muted-border-color);
+            color: var(--pico-muted-color);
+            font-size: 0.82em;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .step-arrow {
+            color: var(--pico-muted-color);
+            font-size: 1.1em;
+            padding: 0 0.15em;
+            pointer-events: none;
+            user-select: none;
+        }
 
-        #tab-upload:checked    ~ .tab-nav label[for="tab-upload"],
-        #tab-keywords:checked  ~ .tab-nav label[for="tab-keywords"],
-        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"],
-        #tab-roles:checked     ~ .tab-nav label[for="tab-roles"] {
-            border-bottom-color: var(--pico-primary);
+        /* Active tab — primary circle when no state class */
+        #tab-upload:checked    ~ .tab-nav label[for="tab-upload"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-keywords:checked  ~ .tab-nav label[for="tab-keywords"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-roles:checked     ~ .tab-nav label[for="tab-roles"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-export:checked    ~ .tab-nav label[for="tab-export"] .step-num {
+            background: var(--pico-primary);
+            color: white;
+        }
+        #tab-upload:checked    ~ .tab-nav label[for="tab-upload"]:not(.tab-yellow):not(.tab-green),
+        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"]:not(.tab-yellow):not(.tab-green),
+        #tab-keywords:checked  ~ .tab-nav label[for="tab-keywords"]:not(.tab-yellow):not(.tab-green),
+        #tab-roles:checked     ~ .tab-nav label[for="tab-roles"]:not(.tab-yellow):not(.tab-green),
+        #tab-export:checked    ~ .tab-nav label[for="tab-export"] {
             color: var(--pico-primary);
+            font-weight: 700;
+        }
+
+        /* Yellow state (file uploaded / words added) */
+        .tab-nav label.tab-yellow .step-num {
+            background: #ffc107;
+            color: #5a3e00;
+        }
+        .tab-nav label.tab-yellow { color: #856404; }
+
+        /* Green state (processing complete) */
+        .tab-nav label.tab-green .step-num {
+            background: #198754;
+            color: white;
+        }
+        .tab-nav label.tab-green { color: #198754; }
+
+        /* Export disabled download buttons */
+        .export-btn-disabled {
+            opacity: 0.4;
+            pointer-events: none;
+            cursor: not-allowed;
         }
     </style>
 </head>
