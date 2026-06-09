@@ -1065,6 +1065,11 @@
             const contactsBtn  = document.getElementById('dl-export-contacts');
             const contactsHint = document.getElementById('dl-export-contacts-hint');
 
+            if (!postingsBtn || !newsBtn || !kwBtn || !contactsBtn) {
+                console.warn('updateExportButtons: Export panel elements not found');
+                return;
+            }
+
             if (completedSession) {
                 postingsBtn.href = `/api/sessions/${completedSession.id}/postings/download`;
                 postingsBtn.classList.remove('export-btn-disabled');
@@ -1094,7 +1099,7 @@
             }
 
             if (contactScan.status === 'completed') {
-                contactsBtn.onclick = () => { downloadContacts(); return false; };
+                contactsBtn.onclick = (e) => { e.preventDefault(); downloadContacts(); };
                 contactsBtn.classList.remove('export-btn-disabled');
                 contactsHint.style.display = 'none';
             } else {
@@ -1115,6 +1120,12 @@
                         fetch(`/api/projects/${PROJECT_ID}/contact-scan/latest/status`),
                         fetch(`/api/projects/${PROJECT_ID}/keyword-groups`),
                     ]);
+
+                if (!sessionsResp.ok || !stopWordsResp.ok || !scanStatusResp.ok ||
+                    !projectResp.ok || !contactScanResp.ok || !kwGroupsResp.ok) {
+                    console.error('refreshTabStates: one or more API calls failed');
+                    return;
+                }
 
                 const sessions    = await sessionsResp.json();
                 const stopWords   = await stopWordsResp.json();
