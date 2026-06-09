@@ -362,49 +362,6 @@ async def download_postings(session_id: str):
     )
 
 
-@app.get("/api/sessions/{session_id}/contacts/download")
-async def download_contacts(session_id: str):
-    rows = _query_all_rows("contacts", session_id)
-    if not rows:
-        return {"error": "No contacts found for this session"}
-
-    # Hide contacts that failed email verification.
-    # Contacts with email_status=None (not yet verified) are kept.
-    _KEEP_STATUSES = {"valid", "accept_all"}
-    rows = [
-        r for r in rows
-        if r.get("email_status") is None or r.get("email_status") in _KEEP_STATUSES
-    ]
-    if not rows:
-        return {"error": "No contacts found for this session"}
-
-    # Fetch company names for this session to join in
-    companies_result = (
-        supabase.table("companies")
-        .select("id, legal_name")
-        .eq("session_id", session_id)
-        .execute()
-    )
-    company_name_by_id = {c["id"]: c["legal_name"] for c in companies_result.data}
-
-    df = pd.DataFrame(rows)
-    df.insert(0, "company_name", df["company_id"].map(company_name_by_id))
-
-    for col in ("id", "session_id", "company_id"):
-        if col in df.columns:
-            df = df.drop(columns=[col])
-
-    buffer = io.BytesIO()
-    df.to_excel(buffer, index=False, engine="openpyxl")
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=contacts_{session_id[:8]}.xlsx"},
-    )
-
-
 @app.get("/api/sessions/{session_id}/news/download")
 async def download_news(session_id: str):
     rows = _query_all_rows("news_articles", session_id)
@@ -434,6 +391,126 @@ async def download_news(session_id: str):
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=news_{session_id[:8]}.xlsx"},
+    )
+
+
+@app.get("/api/projects/{project_id}/contacts/download")
+async def download_project_contacts(project_id: str):
+    # 1. Get all sessions for this project
+    sessions_result = (
+        supabase.table("sessions")
+        .select("id, filename")
+        .eq("project_id", project_id)
+        .execute()
+    )
+    sessions = sessions_result.data
+    if not sessions:
+        raise HTTPException(status_code=404, detail="No sessions found for this project")
+
+    session_ids = [s["id"] for s in sessions]
+    session_filename: dict[str, str] = {s["id"]: s["filename"] for s in sessions}
+
+    # 2. Fetch all companies across those sessions
+    all_companies: list[dict] = []
+    for i in range(0, len(session_ids), 200):
+        batch = session_ids[i:i + 200]
+        offset = 0
+        while True:
+            rows = (
+                supabase.table("companies")
+                .select("id, legal_name, inn, session_id, keyword_hit_count, keyword_group_count")
+                .in_("session_id", batch)
+                .range(offset, offset + 999)
+                .execute()
+            ).data
+            all_companies.extend(rows)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+
+    if not all_companies:
+        raise HTTPException(status_code=404, detail="No companies found in this project")
+
+    company_ids = [c["id"] for c in all_companies]
+    company_meta: dict[str, dict] = {
+        c["id"]: {
+            "Company": c.get("legal_name", ""),
+            "INN": c.get("inn", ""),
+            "Session": session_filename.get(c.get("session_id", ""), ""),
+            "Keywords Found": c.get("keyword_hit_count", 0),
+            "Keyword Groups Found": c.get("keyword_group_count", 0),
+            "Contacts Found": 0,
+        }
+        for c in all_companies
+    }
+
+    # 3. Fetch all contacts with contact_scan_id set, filtered by verification status
+    _KEEP_STATUSES = {"valid", "accept_all"}
+    all_contacts: list[dict] = []
+    for i in range(0, len(company_ids), 200):
+        batch = company_ids[i:i + 200]
+        offset = 0
+        while True:
+            rows = (
+                supabase.table("contacts")
+                .select("*")
+                .in_("company_id", batch)
+                .not_.is_("contact_scan_id", "null")
+                .range(offset, offset + 999)
+                .execute()
+            ).data
+            all_contacts.extend(rows)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+
+    filtered = [
+        c for c in all_contacts
+        if c.get("email_status") is None or c.get("email_status") in _KEEP_STATUSES
+    ]
+
+    if not filtered:
+        raise HTTPException(status_code=404, detail="No contacts found. Run a contact scan first.")
+
+    # 4. Build Sheet 1 — Companies
+    for c in filtered:
+        cid = c.get("company_id")
+        if cid in company_meta:
+            company_meta[cid]["Contacts Found"] += 1
+
+    sheet1_rows = [v for v in company_meta.values() if v["Contacts Found"] > 0]
+    sheet1_rows.sort(key=lambda x: x["Contacts Found"], reverse=True)
+    sheet1_df = pd.DataFrame(sheet1_rows, columns=[
+        "Company", "INN", "Session", "Contacts Found", "Keywords Found", "Keyword Groups Found"
+    ])
+
+    # 5. Build Sheet 2 — Contacts
+    for c in filtered:
+        cid = c.get("company_id")
+        c["company_name"] = company_meta.get(cid, {}).get("Company", "")
+
+    sheet2_df = pd.DataFrame(filtered)
+    for col in ("id", "session_id", "company_id", "contact_scan_id"):
+        if col in sheet2_df.columns:
+            sheet2_df = sheet2_df.drop(columns=[col])
+
+    # company_name first
+    cols = ["company_name"] + [c for c in sheet2_df.columns if c != "company_name"]
+    sheet2_df = sheet2_df[[c for c in cols if c in sheet2_df.columns]]
+    if "company_name" in sheet2_df.columns and "last_name" in sheet2_df.columns:
+        sheet2_df = sheet2_df.sort_values(["company_name", "last_name"], na_position="last")
+
+    # 6. Write two-sheet xlsx
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        sheet1_df.to_excel(writer, sheet_name="Companies", index=False)
+        sheet2_df.to_excel(writer, sheet_name="Contacts", index=False)
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=contacts_{project_id[:8]}.xlsx"},
     )
 
 
