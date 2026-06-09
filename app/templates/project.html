@@ -799,6 +799,7 @@
             const btn = document.getElementById("import-roles-btn");
             const status = document.getElementById("roles-import-status");
             btn.disabled = true;
+            btn.setAttribute("aria-busy", "true");
             status.textContent = "Importing...";
             try {
                 const formData = new FormData();
@@ -813,12 +814,13 @@
                     status.textContent = "Error: " + (data.detail || resp.statusText || "Import failed");
                 } else {
                     status.textContent = `Done: ${data.added} added, ${data.skipped} skipped`;
-                    await loadRoles();
+                    loadRoles();
                 }
             } catch (err) {
                 status.textContent = "Error: " + err.message;
             } finally {
                 btn.disabled = false;
+                btn.removeAttribute("aria-busy");
                 input.value = "";
             }
         }
