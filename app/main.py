@@ -15,7 +15,7 @@ from app.database import supabase
 from app.models import CreateKeywordGroup, RenameKeywordGroup, CreateKeyword, CreateStopWord, UpdateProject
 from app.services.session_processor import process_session, resume_session
 from app.services.keyword_scanner import scan_project_keywords, generate_keyword_xlsx
-from app.services.keyword_parser import parse_keyword_xlsx, parse_stop_word_xlsx
+from app.services.keyword_parser import parse_keyword_xlsx, parse_stop_word_xlsx, parse_roles_xlsx
 
 logging.basicConfig(level=logging.INFO)
 
@@ -101,6 +101,40 @@ async def update_project(project_id: str, body: UpdateProject):
     if not result.data:
         return {"error": "Project not found"}
     return result.data[0]
+
+@app.post("/api/projects/{project_id}/roles/import")
+async def import_roles(project_id: str, file: UploadFile = File(...)):
+    if not (file.filename or "").endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="File must be .xlsx")
+
+    file_bytes = await file.read()
+    try:
+        parsed = parse_roles_xlsx(file_bytes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    result = supabase.table("projects").select("target_roles").eq("id", project_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    existing = result.data[0].get("target_roles") or []
+    existing_lower = {r.lower() for r in existing}
+
+    roles_added = 0
+    roles_skipped = 0
+    merged = list(existing)
+    for role in parsed:
+        if role.lower() in existing_lower:
+            roles_skipped += 1
+        else:
+            merged.append(role)
+            existing_lower.add(role.lower())
+            roles_added += 1
+
+    supabase.table("projects").update({"target_roles": merged}).eq("id", project_id).execute()
+
+    return {"added": roles_added, "skipped": roles_skipped}
+
 
 
 @app.delete("/api/projects/{project_id}")
