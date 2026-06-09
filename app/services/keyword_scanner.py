@@ -75,6 +75,16 @@ def _fetch_all_in(table: str, column: str, values: list[str], select: str = "*")
     return all_rows
 
 
+def _compute_company_hits(groups: list[dict], keyword_results: dict) -> tuple[int, int]:
+    """Compute total keyword hit count and number of groups with at least one hit."""
+    hit_count = sum(kd.get("count", 0) for kd in keyword_results.values())
+    hit_groups = sum(
+        1 for g in groups
+        if any(keyword_results.get(kw, {}).get("count", 0) > 0 for kw in g["keywords"])
+    )
+    return hit_count, hit_groups
+
+
 def scan_project_keywords(project_id: str) -> dict:
     """Scan all postings in a project for keyword matches.
 
@@ -228,6 +238,16 @@ def scan_project_keywords(project_id: str) -> dict:
                         })
 
             keyword_results[kw] = {"count": len(matches), "sentences": matches}
+
+        hit_count, hit_groups = _compute_company_hits(groups, keyword_results)
+        for cid in uc["company_ids"]:
+            try:
+                supabase.table("companies").update({
+                    "keyword_hit_count": hit_count,
+                    "keyword_group_count": hit_groups,
+                }).eq("id", cid).execute()
+            except Exception as e:
+                logger.warning("Failed to update keyword hits for company %s: %s", cid, e)
 
         result_companies.append({
             "name": uc["name"],
