@@ -41,7 +41,6 @@
                     <input type="text" id="project-name" placeholder="New project name" required style="margin:0;">
                     <button type="submit" style="margin:0; white-space:nowrap;">Create Project</button>
                 </div>
-                <input type="text" id="project-roles" placeholder="Target roles for contact enrichment (comma-separated), e.g.: CEO, CTO, HR Director" style="margin:0; font-size:0.9em;">
             </form>
         </article>
 
@@ -84,22 +83,15 @@
         document.getElementById("create-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const input = document.getElementById("project-name");
-            const rolesInput = document.getElementById("project-roles");
             const name = input.value.trim();
             if (!name) return;
-
-            const target_roles = rolesInput.value
-                .split(",")
-                .map(r => r.trim())
-                .filter(r => r.length > 0);
 
             await fetch("/api/projects", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name, target_roles }),
+                body: JSON.stringify({ name }),
             });
             input.value = "";
-            rolesInput.value = "";
             loadProjects();
         });
 
