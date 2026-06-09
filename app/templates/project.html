@@ -1153,7 +1153,6 @@
         loadHistory();
         loadStopWords();
         loadKeywordGroups();
-        refreshTabStates();
         // Initialize contact scan state on page load
         fetch(`/api/projects/${PROJECT_ID}/contact-scan/latest/status`)
             .then(r => r.json())
@@ -1170,6 +1169,7 @@
                 }
             })
             .catch(() => {});
+        refreshTabStates();
     </script>
 </body>
 </html>
