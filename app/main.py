@@ -964,11 +964,11 @@ async def keyword_scan_download_with_contacts(project_id: str):
         if inn:
             inn_to_count[inn] = inn_to_count.get(inn, 0) + 1
 
-    qs_df.insert(
-        5,
-        "Contacts Found",
-        qs_df["INN"].apply(lambda inn: inn_to_count.get(str(inn), 0)),
-    )
+    _contacts_found = qs_df["INN"].apply(lambda inn: inn_to_count.get(str(inn), 0))
+    if "Contacts Found" not in qs_df.columns:
+        qs_df.insert(5, "Contacts Found", _contacts_found)
+    else:
+        qs_df["Contacts Found"] = _contacts_found
 
     # 7. Build Contacts sheet
     if contacts:
