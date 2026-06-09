@@ -148,15 +148,21 @@
 
         <div class="tabs">
             <input type="radio" id="tab-upload"    name="tab" checked>
-            <input type="radio" id="tab-keywords"  name="tab">
             <input type="radio" id="tab-stopwords" name="tab">
+            <input type="radio" id="tab-keywords"  name="tab">
             <input type="radio" id="tab-roles"     name="tab">
+            <input type="radio" id="tab-export"    name="tab">
 
             <nav class="tab-nav">
-                <label for="tab-upload">Upload</label>
-                <label for="tab-keywords">Keywords</label>
-                <label for="tab-stopwords">Stop Words</label>
-                <label for="tab-roles">Roles</label>
+                <label for="tab-upload"    id="label-upload">   <span class="step-num">1</span> Upload</label>
+                <span class="step-arrow">›</span>
+                <label for="tab-stopwords" id="label-stopwords"><span class="step-num">2</span> Stop Words</label>
+                <span class="step-arrow">›</span>
+                <label for="tab-keywords"  id="label-keywords"> <span class="step-num">3</span> Keywords</label>
+                <span class="step-arrow">›</span>
+                <label for="tab-roles"     id="label-roles">    <span class="step-num">4</span> Roles</label>
+                <span class="step-arrow">›</span>
+                <label for="tab-export"    id="label-export">   <span class="step-num">5</span> Export</label>
             </nav>
 
             <!-- ── Upload panel ── -->
@@ -248,29 +254,6 @@
 
             </div><!-- /panel-upload -->
 
-            <!-- ── Keywords panel ── -->
-            <div id="panel-keywords">
-
-                <!-- Keyword Analysis -->
-                <article>
-                    <h3>Keyword Analysis</h3>
-                    <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
-                        <input type="text" id="new-group-name" placeholder="Group name (e.g. ABM)" style="margin:0;">
-                        <button onclick="addKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
-                        <button id="import-kw-btn" class="secondary" style="margin:0; white-space:nowrap;"
-                                onclick="document.getElementById('kw-import-input').click()">Import from file</button>
-                        <input type="file" id="kw-import-input" accept=".xlsx" style="display:none"
-                               onchange="importKeywordFile(this)">
-                        <span id="kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
-                    </div>
-                    <div id="keyword-groups-container"></div>
-                    <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
-                        Scan Postings &amp; Download XLSX
-                    </button>
-                </article>
-
-            </div><!-- /panel-keywords -->
-
             <!-- ── Stop Words panel ── -->
             <div id="panel-stopwords">
 
@@ -293,6 +276,29 @@
                 </article>
 
             </div><!-- /panel-stopwords -->
+
+            <!-- ── Keywords panel ── -->
+            <div id="panel-keywords">
+
+                <!-- Keyword Analysis -->
+                <article>
+                    <h3>Keyword Analysis</h3>
+                    <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
+                        <input type="text" id="new-group-name" placeholder="Group name (e.g. ABM)" style="margin:0;">
+                        <button onclick="addKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
+                        <button id="import-kw-btn" class="secondary" style="margin:0; white-space:nowrap;"
+                                onclick="document.getElementById('kw-import-input').click()">Import from file</button>
+                        <input type="file" id="kw-import-input" accept=".xlsx" style="display:none"
+                               onchange="importKeywordFile(this)">
+                        <span id="kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
+                    </div>
+                    <div id="keyword-groups-container"></div>
+                    <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
+                        Scan Postings &amp; Download XLSX
+                    </button>
+                </article>
+
+            </div><!-- /panel-keywords -->
 
             <!-- ── Roles panel ── -->
             <div id="panel-roles">
