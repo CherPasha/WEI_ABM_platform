@@ -13,6 +13,7 @@ CREATE TABLE projects (
     target_roles                TEXT[]      DEFAULT '{}',
     contact_scan_use_roles      BOOLEAN     NOT NULL DEFAULT true,
     contact_scan_keyword_only   BOOLEAN     NOT NULL DEFAULT false,
+    keyword_scan_result         TEXT,
     created_at                  TIMESTAMPTZ DEFAULT now()
 );
 
