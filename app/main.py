@@ -131,7 +131,9 @@ async def import_roles(project_id: str, file: UploadFile = File(...)):
             existing_lower.add(role.lower())
             roles_added += 1
 
-    supabase.table("projects").update({"target_roles": merged}).eq("id", project_id).execute()
+    update_result = supabase.table("projects").update({"target_roles": merged}).eq("id", project_id).execute()
+    if not update_result.data:
+        raise HTTPException(status_code=500, detail="Failed to save roles")
 
     return {"added": roles_added, "skipped": roles_skipped}
 
