@@ -2,7 +2,7 @@ import io
 import pytest
 import openpyxl
 
-from app.services.keyword_parser import parse_keyword_xlsx, parse_stop_word_xlsx
+from app.services.keyword_parser import parse_keyword_xlsx, parse_stop_word_xlsx, parse_roles_xlsx
 
 
 def _make_xlsx(rows: list) -> bytes:
@@ -112,3 +112,37 @@ def test_parse_stop_words_ignores_extra_columns():
     wb.save(buf)
     result = parse_stop_word_xlsx(buf.getvalue())
     assert result == ["слово"]
+
+
+def test_parse_roles_basic():
+    data = _make_single_col_xlsx(["CEO", "CTO", "HR Director"])
+    result = parse_roles_xlsx(data)
+    assert result == ["CEO", "CTO", "HR Director"]
+
+
+def test_parse_roles_skips_empty():
+    data = _make_single_col_xlsx(["CEO", "", None, "CFO"])
+    result = parse_roles_xlsx(data)
+    assert result == ["CEO", "CFO"]
+
+
+def test_parse_roles_strips_whitespace():
+    data = _make_single_col_xlsx(["  CEO  ", "CTO"])
+    result = parse_roles_xlsx(data)
+    assert result == ["CEO", "CTO"]
+
+
+def test_parse_roles_empty_file():
+    data = _make_single_col_xlsx([])
+    result = parse_roles_xlsx(data)
+    assert result == []
+
+
+def test_parse_roles_ignores_extra_columns():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["CEO", "extra column"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    result = parse_roles_xlsx(buf.getvalue())
+    assert result == ["CEO"]

@@ -60,3 +60,23 @@ def parse_stop_word_xlsx(file_bytes: bytes) -> list[str]:
             results.append(word)
     wb.close()
     return results
+
+
+def parse_roles_xlsx(file_bytes: bytes) -> list[str]:
+    """
+    Parse an Excel file with one column of role names, one role per row.
+
+    Returns list of non-empty stripped strings.
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    ws = wb.active
+    results = []
+    for row in ws.iter_rows(values_only=True):
+        if not row:
+            continue
+        raw_role = row[0]
+        role = str(raw_role).strip() if raw_role is not None else ""
+        if role:
+            results.append(role)
+    wb.close()
+    return results
