@@ -9,8 +9,6 @@ from app.services.company_parser import parse_xlsx_to_companies
 from app.services.name_resolver import find_company_real_name, NAME_UNAVAILABLE
 from app.services.postings_finder import find_all_postings_for_company
 from app.services.yandex_search import find_all_news_for_company
-from app.services.hunter_service import find_contacts_for_domain, verify_email
-from app.services.contact_enrichment import enrich_contacts_for_company
 from app.services.llm import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -85,7 +83,7 @@ def _get_session_flags(session_id: str) -> dict:
     """Fetch the run_* flags for a session."""
     result = (
         supabase.table("sessions")
-        .select("run_postings, run_news, run_contacts, run_enrichment, run_verification, project_id")
+        .select("run_postings, run_news, project_id")
         .eq("id", session_id)
         .execute()
     )
@@ -114,9 +112,6 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
         flags = _get_session_flags(session_id)
         run_postings = flags.get("run_postings", True)
         run_news = flags.get("run_news", True)
-        run_contacts = flags.get("run_contacts", True)
-        run_enrichment = flags.get("run_enrichment", True)
-        run_verification = flags.get("run_verification", True)
 
         # --- Step 2: Resolve company names ---
         # Always runs — needed by postings and news stages
@@ -207,110 +202,6 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
         else:
             _update_session(session_id, news_done=total)
 
-        # --- Step 4: Find contacts via Hunter.io ---
-        if not _session_exists(session_id):
-            logger.warning("Session %s was deleted during processing, aborting", session_id)
-            return
-
-        if run_contacts:
-            _update_session(session_id, status="finding_contacts", contacts_done=0)
-
-            for i, company in enumerate(db_companies):
-                website_url = company.get("website_url")
-                if not website_url:
-                    _update_session(session_id, contacts_done=i + 1)
-                    continue
-
-                contacts = find_contacts_for_domain(website_url)
-                time.sleep(5)  # Rate limit between Hunter.io calls
-
-                if contacts:
-                    for c in contacts:
-                        c["session_id"] = session_id
-                        c["company_id"] = company["id"]
-
-                    _batch_insert("contacts", contacts)
-
-                _update_session(session_id, contacts_done=i + 1)
-        else:
-            _update_session(session_id, contacts_done=total)
-
-        # --- Step 5: Contact enrichment via Gemini ---
-        if run_enrichment:
-            project_id = flags.get("project_id")
-            project = supabase.table("projects").select("target_roles").eq("id", project_id).execute()
-            target_roles = project.data[0].get("target_roles") or []
-
-            if target_roles:
-                _update_session(session_id, status="enriching_contacts", enrichment_done=0)
-
-                for i, company in enumerate(db_companies):
-                    try:
-                        existing = (
-                            supabase.table("contacts")
-                            .select("*")
-                            .eq("company_id", company["id"])
-                            .execute()
-                        ).data
-                        new_contacts = enrich_contacts_for_company(
-                            llm_client, company, target_roles, session_id, existing,
-                        )
-                        if new_contacts:
-                            _batch_insert("contacts", new_contacts)
-                    except Exception as e:
-                        logger.error(
-                            "Enrichment failed for company '%s' (session %s): %s",
-                            company.get("legal_name"), session_id, e,
-                        )
-                    _update_session(session_id, enrichment_done=i + 1)
-            else:
-                _update_session(session_id, enrichment_done=total)
-        else:
-            _update_session(session_id, enrichment_done=total)
-
-        # --- Step 6: Verify email addresses via Hunter.io ---
-        if not _session_exists(session_id):
-            logger.warning("Session %s was deleted during processing, aborting", session_id)
-            return
-
-        if run_verification:
-            contacts_to_verify = _supabase_call_with_retry(
-                lambda: supabase.table("contacts")
-                .select("id, email")
-                .eq("session_id", session_id)
-                .not_.is_("email", "null")
-                .order("id")
-                .execute()
-            ).data
-
-            _update_session(
-                session_id,
-                status="verifying_emails",
-                verification_done=0,
-                total_verification=len(contacts_to_verify),
-            )
-
-            for i, contact in enumerate(contacts_to_verify):
-                try:
-                    result = verify_email(contact["email"])
-                    if result is not None:
-                        _supabase_call_with_retry(
-                            lambda r=result, cid=contact["id"]: supabase.table("contacts")
-                            .update(r)
-                            .eq("id", cid)
-                            .execute()
-                        )
-                except Exception as e:
-                    logger.error(
-                        "Email verification failed for contact %s ('%s'): %s",
-                        contact["id"], contact["email"], e,
-                    )
-
-                time.sleep(0.2)  # Hunter.io rate limit: 300 req/min
-                _update_session(session_id, verification_done=i + 1)
-        else:
-            _update_session(session_id, verification_done=0, total_verification=0)
-
         # --- Done ---
         _update_session(session_id, status="completed")
         logger.info("Session %s completed successfully", session_id)
@@ -326,7 +217,7 @@ def resume_session(session_id: str):
         # Fetch current session state
         result = (
             supabase.table("sessions")
-            .select("total_companies, names_done, postings_done, news_done, contacts_done, enrichment_done, verification_done, project_id, run_postings, run_news, run_contacts, run_enrichment, run_verification")
+            .select("total_companies, names_done, postings_done, news_done, run_postings, run_news")
             .eq("id", session_id)
             .execute()
         )
@@ -339,16 +230,9 @@ def resume_session(session_id: str):
         names_done = session["names_done"] or 0
         postings_done = session["postings_done"] or 0
         news_done = session["news_done"] or 0
-        contacts_done = session["contacts_done"] or 0
-        enrichment_done = session["enrichment_done"] or 0
-        verification_done = session.get("verification_done") or 0
-        run_verification = session.get("run_verification", True)
-        project_id = session["project_id"]
 
         run_postings = session.get("run_postings", True)
         run_news = session.get("run_news", True)
-        run_contacts = session.get("run_contacts", True)
-        run_enrichment = session.get("run_enrichment", True)
 
         if total == 0:
             logger.warning("Session %s has no companies, cannot resume", session_id)
@@ -439,111 +323,6 @@ def resume_session(session_id: str):
                 _update_session(session_id, news_done=i + 1)
         elif not run_news and news_done < total:
             _update_session(session_id, news_done=total)
-
-        # ── Stage 3: Find contacts (resume from contacts_done) ──
-        if run_contacts and contacts_done < total:
-            _update_session(session_id, status="finding_contacts")
-
-            for i, company in enumerate(db_companies[contacts_done:], start=contacts_done):
-                try:
-                    website_url = company.get("website_url")
-                    if not website_url:
-                        _update_session(session_id, contacts_done=i + 1)
-                        continue
-
-                    contacts = find_contacts_for_domain(website_url)
-                    time.sleep(5)
-
-                    if contacts:
-                        for c in contacts:
-                            c["session_id"] = session_id
-                            c["company_id"] = company["id"]
-                        _batch_insert("contacts", contacts)
-
-                except Exception as e:
-                    logger.error(
-                        "Failed contacts for company '%s' (session %s): %s",
-                        company.get("legal_name"), session_id, e,
-                    )
-
-                _update_session(session_id, contacts_done=i + 1)
-        elif not run_contacts and contacts_done < total:
-            _update_session(session_id, contacts_done=total)
-
-        # ── Stage 4: Contact enrichment (resume from enrichment_done) ──
-        if run_enrichment and enrichment_done < total:
-            project = supabase.table("projects").select("target_roles").eq("id", project_id).execute()
-            target_roles = project.data[0].get("target_roles") or []
-
-            if target_roles:
-                _update_session(session_id, status="enriching_contacts")
-                llm_client = LLMClient()
-
-                for i, company in enumerate(db_companies[enrichment_done:], start=enrichment_done):
-                    try:
-                        existing = (
-                            supabase.table("contacts")
-                            .select("*")
-                            .eq("company_id", company["id"])
-                            .execute()
-                        ).data
-                        new_contacts = enrich_contacts_for_company(
-                            llm_client, company, target_roles, session_id, existing,
-                        )
-                        if new_contacts:
-                            _batch_insert("contacts", new_contacts)
-                    except Exception as e:
-                        logger.error(
-                            "Enrichment failed for company '%s' (session %s): %s",
-                            company.get("legal_name"), session_id, e,
-                        )
-                    _update_session(session_id, enrichment_done=i + 1)
-            else:
-                _update_session(session_id, enrichment_done=total)
-        elif not run_enrichment and enrichment_done < total:
-            _update_session(session_id, enrichment_done=total)
-
-        # ── Stage 6: Verify emails (resume from verification_done) ──
-        if run_verification:
-            contacts_to_verify = _supabase_call_with_retry(
-                lambda: supabase.table("contacts")
-                .select("id, email")
-                .eq("session_id", session_id)
-                .not_.is_("email", "null")
-                .order("id")
-                .execute()
-            ).data
-
-            if verification_done < len(contacts_to_verify):
-                _update_session(
-                    session_id,
-                    status="verifying_emails",
-                    total_verification=len(contacts_to_verify),
-                )
-
-                for i, contact in enumerate(
-                    contacts_to_verify[verification_done:], start=verification_done
-                ):
-                    try:
-                        result = verify_email(contact["email"])
-                        if result is not None:
-                            _supabase_call_with_retry(
-                                lambda r=result, cid=contact["id"]: supabase.table("contacts")
-                                .update(r)
-                                .eq("id", cid)
-                                .execute()
-                            )
-                    except Exception as e:
-                        logger.error(
-                            "Email verification failed for contact %s ('%s'): %s",
-                            contact["id"], contact["email"], e,
-                        )
-
-                    time.sleep(0.2)
-                    _update_session(session_id, verification_done=i + 1)
-
-        else:
-            _update_session(session_id, verification_done=0, total_verification=0)
 
         _update_session(session_id, status="completed")
         logger.info("Session %s resumed and completed successfully", session_id)
