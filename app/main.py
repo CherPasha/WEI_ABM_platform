@@ -1,3 +1,4 @@
+import base64
 import io
 import logging
 import time
@@ -803,7 +804,13 @@ def _run_scan_task(job_id: str, project_id: str) -> None:
     try:
         scan_result = scan_project_keywords(project_id)
         buffer = generate_keyword_xlsx(scan_result)
-        _scan_jobs[job_id] = {"status": "done", "result": buffer.getvalue(), "error": None, "ts": time.time()}
+        data = buffer.getvalue()
+        # Persist to DB so Export tab can fetch it later
+        encoded = base64.b64encode(data).decode()
+        supabase.table("projects").update(
+            {"keyword_scan_result": encoded}
+        ).eq("id", project_id).execute()
+        _scan_jobs[job_id] = {"status": "done", "result": data, "error": None, "ts": time.time()}
     except ValueError as e:
         _scan_jobs[job_id] = {"status": "error", "result": None, "error": str(e), "ts": time.time()}
     except Exception as e:
@@ -845,4 +852,40 @@ async def keyword_scan_job_download(project_id: str, job_id: str):
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=keyword_analysis_{project_id[:8]}.xlsx"},
+    )
+
+
+@app.get("/api/projects/{project_id}/keyword-scan/status")
+async def keyword_scan_db_status(project_id: str):
+    """Returns whether a saved keyword scan result exists in the DB."""
+    result = (
+        supabase.table("projects")
+        .select("keyword_scan_result")
+        .eq("id", project_id)
+        .execute()
+    )
+    if not result.data:
+        return {"has_result": False}
+    return {"has_result": result.data[0].get("keyword_scan_result") is not None}
+
+
+@app.get("/api/projects/{project_id}/keyword-scan/download")
+async def keyword_scan_db_download(project_id: str):
+    """Streams the saved keyword scan XLSX from the DB."""
+    result = (
+        supabase.table("projects")
+        .select("keyword_scan_result")
+        .eq("id", project_id)
+        .execute()
+    )
+    if not result.data or result.data[0].get("keyword_scan_result") is None:
+        raise HTTPException(status_code=404, detail="No keyword scan result saved for this project")
+    encoded = result.data[0]["keyword_scan_result"]
+    data = base64.b64decode(encoded)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename=keyword_analysis_{project_id[:8]}.xlsx"
+        },
     )
