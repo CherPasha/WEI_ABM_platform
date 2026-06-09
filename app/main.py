@@ -12,8 +12,9 @@ from starlette.requests import Request
 from pydantic import BaseModel
 
 from app.database import supabase
-from app.models import CreateKeywordGroup, RenameKeywordGroup, CreateKeyword, CreateStopWord, UpdateProject
+from app.models import CreateKeywordGroup, RenameKeywordGroup, CreateKeyword, CreateStopWord, UpdateProject, ContactScanSettings
 from app.services.session_processor import process_session, resume_session
+from app.services.contact_scanner import run_contact_scan
 from app.services.keyword_scanner import scan_project_keywords, generate_keyword_xlsx
 from app.services.keyword_parser import parse_keyword_xlsx, parse_stop_word_xlsx, parse_roles_xlsx
 
@@ -84,7 +85,7 @@ async def create_project(body: CreateProject):
 async def project_details(project_id: str):
     result = (
         supabase.table("projects")
-        .select("id, name, target_roles, created_at")
+        .select("id, name, target_roles, contact_scan_use_roles, contact_scan_keyword_only, created_at")
         .eq("id", project_id)
         .execute()
     )
@@ -147,6 +148,66 @@ async def delete_project(project_id: str):
     return {"status": "ok"}
 
 
+# ──────────────────────── Contact Scan ────────────────────────
+
+
+@app.post("/api/projects/{project_id}/contact-scan/start")
+async def contact_scan_start(project_id: str, background_tasks: BackgroundTasks):
+    # Check if a scan is already running
+    running = (
+        supabase.table("contact_scans")
+        .select("id")
+        .eq("project_id", project_id)
+        .eq("status", "running")
+        .execute()
+    )
+    if running.data:
+        raise HTTPException(status_code=409, detail="A contact scan is already running for this project")
+
+    # Snapshot current project settings
+    project = supabase.table("projects").select("contact_scan_use_roles, contact_scan_keyword_only").eq("id", project_id).execute()
+    if not project.data:
+        raise HTTPException(status_code=404, detail="Project not found")
+    proj_settings = project.data[0]
+
+    scan = supabase.table("contact_scans").insert({
+        "project_id": project_id,
+        "status": "running",
+        "use_roles": proj_settings["contact_scan_use_roles"],
+        "keyword_only": proj_settings["contact_scan_keyword_only"],
+    }).execute()
+    scan_id = scan.data[0]["id"]
+
+    background_tasks.add_task(run_contact_scan, scan_id)
+    return {"scan_id": scan_id}
+
+
+@app.get("/api/projects/{project_id}/contact-scan/latest/status")
+async def contact_scan_latest_status(project_id: str):
+    result = (
+        supabase.table("contact_scans")
+        .select("status, use_roles, keyword_only, total_companies, hunter_done, enrichment_done, total_verification, verification_done, contacts_added, error_message, created_at")
+        .eq("project_id", project_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return {"status": "none"}
+    return result.data[0]
+
+
+@app.put("/api/projects/{project_id}/contact-scan/settings")
+async def update_contact_scan_settings(project_id: str, body: ContactScanSettings):
+    result = supabase.table("projects").update({
+        "contact_scan_use_roles": body.use_roles,
+        "contact_scan_keyword_only": body.keyword_only,
+    }).eq("id", project_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return result.data[0]
+
+
 # ──────────────────────── Upload (scoped to project) ────────────────────────
 
 
@@ -157,9 +218,6 @@ async def upload_file(
     file: UploadFile = File(...),
     run_postings: bool = Form(True),
     run_news: bool = Form(True),
-    run_contacts: bool = Form(True),
-    run_enrichment: bool = Form(True),
-    run_verification: bool = Form(True),
 ):
     if not file.filename.endswith((".xlsx", ".xls", ".csv")):
         return {"error": "Only .xlsx/.xls/.csv files are accepted"}
@@ -173,9 +231,6 @@ async def upload_file(
         "total_companies": 0,
         "run_postings": run_postings,
         "run_news": run_news,
-        "run_contacts": run_contacts,
-        "run_enrichment": run_enrichment,
-        "run_verification": run_verification,
     }).execute()
 
     session_id = result.data[0]["id"]
@@ -192,7 +247,7 @@ async def upload_file(
 async def list_sessions(project_id: str):
     result = (
         supabase.table("sessions")
-        .select("id, filename, status, total_companies, names_done, postings_done, news_done, contacts_done, enrichment_done, verification_done, total_verification, created_at")
+        .select("id, filename, status, total_companies, names_done, postings_done, news_done, created_at")
         .eq("project_id", project_id)
         .order("created_at", desc=True)
         .limit(50)
@@ -208,7 +263,7 @@ async def list_sessions(project_id: str):
 async def session_status(session_id: str):
     result = (
         supabase.table("sessions")
-        .select("id, filename, status, error_message, total_companies, names_done, postings_done, news_done, contacts_done, enrichment_done, verification_done, total_verification")
+        .select("id, filename, status, error_message, total_companies, names_done, postings_done, news_done")
         .eq("id", session_id)
         .execute()
     )

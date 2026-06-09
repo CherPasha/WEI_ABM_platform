@@ -42,3 +42,8 @@ class SessionListItem(BaseModel):
     postings_done: int = 0
     contacts_done: int = 0
     created_at: Optional[str] = None
+
+
+class ContactScanSettings(BaseModel):
+    use_roles: bool
+    keyword_only: bool
