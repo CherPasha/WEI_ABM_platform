@@ -48,15 +48,8 @@ CREATE TABLE sessions (
     names_done       INTEGER     DEFAULT 0,
     postings_done    INTEGER     DEFAULT 0,
     news_done        INTEGER     DEFAULT 0,
-    contacts_done    INTEGER     DEFAULT 0,
-    enrichment_done  INTEGER     DEFAULT 0,
     run_postings     BOOLEAN     DEFAULT TRUE,
     run_news         BOOLEAN     DEFAULT TRUE,
-    run_contacts     BOOLEAN     DEFAULT TRUE,
-    run_enrichment   BOOLEAN     DEFAULT TRUE,
-    run_verification  BOOLEAN     DEFAULT TRUE,
-    verification_done INTEGER     DEFAULT 0,
-    total_verification INTEGER    DEFAULT 0,
     created_at       TIMESTAMPTZ DEFAULT now()
 );
 
