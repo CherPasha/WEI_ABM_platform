@@ -1,6 +1,8 @@
 import time
 from unittest.mock import MagicMock, patch, call
 
+from app.services.contact_scanner import run_contact_scan
+
 
 @patch("app.services.contact_scanner.supabase")
 @patch("app.services.contact_scanner.find_contacts_for_domain", return_value=[])
@@ -36,7 +38,6 @@ def test_scan_completes_when_no_sessions(mock_sleep, mock_hunter, mock_supa):
 
     mock_supa.table.side_effect = table_side_effect
 
-    from app.services.contact_scanner import run_contact_scan
     run_contact_scan("scan-1")
 
     # Hunter.io should not be called (no companies to scan)
@@ -102,10 +103,7 @@ def test_scan_deduplicates_hunter_contacts_by_email(mock_sleep, mock_hunter, moc
 
     mock_supa.table.side_effect = table_side_effect
 
-    from importlib import reload
-    import app.services.contact_scanner as cs
-    reload(cs)
-    cs.run_contact_scan("scan-1")
+    run_contact_scan("scan-1")
 
     # Only the NEW contact should have been inserted
     all_inserted = [row for batch in inserted_batches for row in batch]

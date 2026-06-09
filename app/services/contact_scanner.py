@@ -1,18 +1,8 @@
 import logging
 import time
 
-# Conditional imports allow test mocks to survive importlib.reload() within a
-# patch context: if a name is already set (e.g. by a @patch decorator), we
-# skip re-importing the real implementation so the mock remains active.
-if "supabase" not in dir():
-    from app.database import supabase  # noqa: F401  (used as module global)
-
-if "find_contacts_for_domain" not in dir():
-    from app.services.hunter_service import find_contacts_for_domain  # noqa: F401
-
-if "verify_email" not in dir():
-    from app.services.hunter_service import verify_email  # noqa: F401
-
+from app.database import supabase
+from app.services.hunter_service import find_contacts_for_domain, verify_email
 from app.services.contact_enrichment import enrich_contacts_for_company
 from app.services.llm import LLMClient
 
