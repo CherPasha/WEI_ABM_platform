@@ -56,6 +56,7 @@
         #tab-upload:checked    ~ #panel-upload    { display: block; }
         #tab-keywords:checked  ~ #panel-keywords  { display: block; }
         #tab-stopwords:checked ~ #panel-stopwords { display: block; }
+        #tab-roles:checked     ~ #panel-roles     { display: block; }
 
         .tab-nav {
             display: flex;
@@ -75,7 +76,8 @@
 
         #tab-upload:checked    ~ .tab-nav label[for="tab-upload"],
         #tab-keywords:checked  ~ .tab-nav label[for="tab-keywords"],
-        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"] {
+        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"],
+        #tab-roles:checked     ~ .tab-nav label[for="tab-roles"] {
             border-bottom-color: var(--pico-primary);
             color: var(--pico-primary);
         }
@@ -92,11 +94,13 @@
             <input type="radio" id="tab-upload"    name="tab" checked>
             <input type="radio" id="tab-keywords"  name="tab">
             <input type="radio" id="tab-stopwords" name="tab">
+            <input type="radio" id="tab-roles"     name="tab">
 
             <nav class="tab-nav">
                 <label for="tab-upload">Upload</label>
                 <label for="tab-keywords">Keywords</label>
                 <label for="tab-stopwords">Stop Words</label>
+                <label for="tab-roles">Roles</label>
             </nav>
 
             <!-- ── Upload panel ── -->
@@ -233,6 +237,83 @@
                 </article>
 
             </div><!-- /panel-stopwords -->
+
+            <!-- ── Roles panel ── -->
+            <div id="panel-roles">
+
+                <!-- Roles management -->
+                <article>
+                    <h3>Target Roles for Contact Enrichment</h3>
+                    <div id="roles-list" class="roles-list"></div>
+                    <div style="display:flex; gap:0.5em; align-items:center; margin-top:0.5em; flex-wrap:wrap;">
+                        <input type="text" id="new-role-input" placeholder="Add role, e.g. CEO, CTO" style="margin:0; padding:0.3em 0.5em; font-size:0.9em;">
+                        <button onclick="addRole()" style="margin:0; padding:0.3em 0.8em; font-size:0.85em; white-space:nowrap;">Add</button>
+                        <button id="import-roles-btn" class="secondary" style="margin:0; padding:0.3em 0.8em; font-size:0.85em; white-space:nowrap;"
+                                onclick="document.getElementById('roles-import-input').click()">Import from xlsx</button>
+                        <input type="file" id="roles-import-input" accept=".xlsx" style="display:none"
+                               onchange="importRolesFile(this)">
+                        <span id="roles-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
+                    </div>
+                </article>
+
+                <!-- Contact Scan Settings -->
+                <article>
+                    <h3>Contact Scan Settings</h3>
+                    <div style="display:flex; flex-direction:column; gap:0.5em;">
+                        <label style="display:flex; align-items:center; gap:0.5em; font-size:0.95em;">
+                            <input type="checkbox" id="chk-use-roles" style="margin:0;" onchange="saveContactScanSettings()">
+                            Use roles for LLM enrichment
+                            <span style="color:var(--pico-muted-color); font-size:0.85em;">(finds people by job title)</span>
+                        </label>
+                        <label style="display:flex; align-items:center; gap:0.5em; font-size:0.95em;">
+                            <input type="checkbox" id="chk-keyword-only" style="margin:0;" onchange="saveContactScanSettings()">
+                            Keyword companies only
+                            <span style="color:var(--pico-muted-color); font-size:0.85em;">(skip companies with no keyword hits)</span>
+                        </label>
+                    </div>
+                </article>
+
+                <!-- Scan Launch + Progress -->
+                <article>
+                    <h3>Contact Scan</h3>
+                    <button id="scan-contacts-btn" onclick="launchContactScan()" class="contrast">
+                        Launch Contact Scan
+                    </button>
+                    <p id="scan-contacts-error" style="color:var(--pico-color-red-500); display:none; margin-top:0.5em;"></p>
+
+                    <div id="contact-scan-progress" style="display:none; margin-top:1em;">
+                        <table style="font-size:0.9em;">
+                            <thead><tr><th>Stage</th><th>Progress</th><th></th></tr></thead>
+                            <tbody>
+                                <tr>
+                                    <td>Hunter.io search</td>
+                                    <td><progress id="scan-prog-hunter-bar" value="0" max="100" style="width:160px;"></progress></td>
+                                    <td id="scan-prog-hunter-text">&mdash;</td>
+                                </tr>
+                                <tr id="scan-enrichment-row">
+                                    <td>LLM enrichment</td>
+                                    <td><progress id="scan-prog-enrichment-bar" value="0" max="100" style="width:160px;"></progress></td>
+                                    <td id="scan-prog-enrichment-text">&mdash;</td>
+                                </tr>
+                                <tr>
+                                    <td>Email verification</td>
+                                    <td><progress id="scan-prog-verification-bar" value="0" max="100" style="width:160px;"></progress></td>
+                                    <td id="scan-prog-verification-text">&mdash;</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p id="scan-contacts-status" style="font-size:0.9em; margin-top:0.5em;"></p>
+                    </div>
+
+                    <div style="margin-top:1em;">
+                        <button id="dl-contacts-btn" onclick="downloadContacts()" class="secondary"
+                                style="display:none;">
+                            Download Contacts (.xlsx)
+                        </button>
+                    </div>
+                </article>
+
+            </div><!-- /panel-roles -->
 
         </div><!-- /tabs -->
     </main>
@@ -748,11 +829,155 @@
             }
         }
 
+        // ---- Contact Scan Settings ----
+        async function loadContactScanSettings() {
+            try {
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/details`);
+                const project = await resp.json();
+                document.getElementById("chk-use-roles").checked =
+                    project.contact_scan_use_roles !== false;  // default true
+                document.getElementById("chk-keyword-only").checked =
+                    project.contact_scan_keyword_only === true;
+            } catch (err) {
+                console.error("Failed to load contact scan settings:", err);
+            }
+        }
+
+        async function saveContactScanSettings() {
+            const use_roles = document.getElementById("chk-use-roles").checked;
+            const keyword_only = document.getElementById("chk-keyword-only").checked;
+            fetch(`/api/projects/${PROJECT_ID}/contact-scan/settings`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ use_roles, keyword_only }),
+            });
+        }
+
+        // ---- Contact Scan Launch + Polling ----
+        let contactScanPollInterval = null;
+
+        async function launchContactScan() {
+            const btn = document.getElementById("scan-contacts-btn");
+            const errorEl = document.getElementById("scan-contacts-error");
+            errorEl.style.display = "none";
+            btn.disabled = true;
+            btn.setAttribute("aria-busy", "true");
+
+            try {
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/contact-scan/start`, {
+                    method: "POST",
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    errorEl.textContent = data.detail || "Failed to start scan";
+                    errorEl.style.display = "block";
+                    btn.disabled = false;
+                    btn.removeAttribute("aria-busy");
+                    return;
+                }
+                document.getElementById("contact-scan-progress").style.display = "block";
+                document.getElementById("dl-contacts-btn").style.display = "none";
+                document.getElementById("scan-contacts-status").textContent = "";
+                startContactScanPolling();
+            } catch (err) {
+                errorEl.textContent = "Error: " + err.message;
+                errorEl.style.display = "block";
+                btn.disabled = false;
+                btn.removeAttribute("aria-busy");
+            }
+        }
+
+        function startContactScanPolling() {
+            if (contactScanPollInterval) clearInterval(contactScanPollInterval);
+            contactScanPollInterval = setInterval(pollContactScan, 3000);
+            pollContactScan();
+        }
+
+        async function pollContactScan() {
+            try {
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/contact-scan/latest/status`);
+                const data = await resp.json();
+
+                if (data.status === "none") return;
+
+                document.getElementById("contact-scan-progress").style.display = "block";
+
+                const total = data.total_companies || 0;
+
+                function setScanStage(prefix, done, denom) {
+                    const d = denom || total;
+                    const pct = d > 0 ? Math.round((done / d) * 100) : 0;
+                    document.getElementById(`scan-prog-${prefix}-bar`).value = pct;
+                    document.getElementById(`scan-prog-${prefix}-text`).textContent =
+                        d ? `${done} / ${d}` : "\u2014";
+                }
+
+                setScanStage("hunter", data.hunter_done || 0);
+                setScanStage("enrichment", data.enrichment_done || 0);
+                setScanStage("verification", data.verification_done || 0, data.total_verification || 0);
+
+                // Show/hide enrichment row based on scan's use_roles snapshot
+                document.getElementById("scan-enrichment-row").style.display =
+                    data.use_roles ? "" : "none";
+
+                const btn = document.getElementById("scan-contacts-btn");
+                const statusEl = document.getElementById("scan-contacts-status");
+
+                if (data.status === "completed") {
+                    clearInterval(contactScanPollInterval);
+                    btn.disabled = false;
+                    btn.removeAttribute("aria-busy");
+                    statusEl.textContent =
+                        `Completed — ${data.contacts_added || 0} contacts added`;
+                    statusEl.style.color = "var(--pico-color-green-500)";
+                    document.getElementById("dl-contacts-btn").style.display = "inline-block";
+                } else if (data.status === "failed") {
+                    clearInterval(contactScanPollInterval);
+                    btn.disabled = false;
+                    btn.removeAttribute("aria-busy");
+                    statusEl.textContent = "Failed: " + (data.error_message || "Unknown error");
+                    statusEl.style.color = "var(--pico-color-red-500)";
+                } else {
+                    // still running
+                    btn.disabled = true;
+                    btn.setAttribute("aria-busy", "true");
+                }
+            } catch (err) {
+                console.error("Contact scan poll error:", err);
+            }
+        }
+
+        async function downloadContacts() {
+            const a = document.createElement("a");
+            a.href = `/api/projects/${PROJECT_ID}/contacts/download`;
+            a.download = "contacts.xlsx";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+
         // Load on page load
         loadRoles();
+        loadContactScanSettings();
         loadHistory();
         loadStopWords();
         loadKeywordGroups();
+        // Initialize contact scan state on page load
+        fetch(`/api/projects/${PROJECT_ID}/contact-scan/latest/status`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === "none") return;
+                document.getElementById("contact-scan-progress").style.display = "block";
+                if (data.status === "running") {
+                    startContactScanPolling();
+                } else {
+                    pollContactScan();
+                    if (data.status === "completed") {
+                        document.getElementById("dl-contacts-btn").style.display = "inline-block";
+                    }
+                }
+            })
+            .catch(() => {});
     </script>
 </body>
 </html>
