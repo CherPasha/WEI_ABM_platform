@@ -102,21 +102,6 @@
             <!-- ── Upload panel ── -->
             <div id="panel-upload">
 
-                <!-- Target Roles -->
-                <article>
-                    <h3>Target Roles for Contact Enrichment</h3>
-                    <div id="roles-list" class="roles-list"></div>
-                    <div style="display:flex; gap:0.5em; align-items:center; margin-top:0.5em; flex-wrap:wrap;">
-                        <input type="text" id="new-role-input" placeholder="Add role, e.g. CEO, CTO" style="margin:0; padding:0.3em 0.5em; font-size:0.9em;">
-                        <button onclick="addRole()" style="margin:0; padding:0.3em 0.8em; font-size:0.85em; white-space:nowrap;">Add</button>
-                        <button id="import-roles-btn" class="secondary" style="margin:0; padding:0.3em 0.8em; font-size:0.85em; white-space:nowrap;"
-                                onclick="document.getElementById('roles-import-input').click()">Import from xlsx</button>
-                        <input type="file" id="roles-import-input" accept=".xlsx" style="display:none"
-                               onchange="importRolesFile(this)">
-                        <span id="roles-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
-                    </div>
-                </article>
-
                 <!-- Upload Section -->
                 <article>
                     <h3>Upload File</h3>
@@ -134,21 +119,6 @@
                                 <input type="checkbox" id="chk-news" checked style="margin:0;">
                                 Find news (Yandex)
                                 <span style="color:var(--pico-muted-color); font-size:0.85em;">~5 sec/company</span>
-                            </label>
-                            <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
-                                <input type="checkbox" id="chk-contacts" checked style="margin:0;">
-                                Find contacts (Hunter.io)
-                                <span style="color:var(--pico-muted-color); font-size:0.85em;">~6 sec/company</span>
-                            </label>
-                            <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
-                                <input type="checkbox" id="chk-enrichment" checked style="margin:0;">
-                                Find contacts (open sources)
-                                <span style="color:var(--pico-muted-color); font-size:0.85em;">~15 sec/company</span>
-                            </label>
-                            <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
-                                <input type="checkbox" id="chk-verification" checked style="margin:0;">
-                                Verify emails (Hunter.io)
-                                <span style="color:var(--pico-muted-color); font-size:0.85em;">~0.2 sec/contact</span>
                             </label>
                         </fieldset>
 
@@ -178,21 +148,6 @@
                                 <td><progress id="prog-news-bar" value="0" max="100" style="width:160px;"></progress></td>
                                 <td id="prog-news-text">&mdash;</td>
                             </tr>
-                            <tr>
-                                <td>Contacts (Hunter.io)</td>
-                                <td><progress id="prog-contacts-bar" value="0" max="100" style="width:160px;"></progress></td>
-                                <td id="prog-contacts-text">&mdash;</td>
-                            </tr>
-                            <tr>
-                                <td>Contact Enrichment</td>
-                                <td><progress id="prog-enrichment-bar" value="0" max="100" style="width:160px;"></progress></td>
-                                <td id="prog-enrichment-text">&mdash;</td>
-                            </tr>
-                            <tr>
-                                <td>Email Verification</td>
-                                <td><progress id="prog-verification-bar" value="0" max="100" style="width:160px;"></progress></td>
-                                <td id="prog-verification-text">&mdash;</td>
-                            </tr>
                         </tbody>
                     </table>
                 </article>
@@ -203,7 +158,6 @@
                     <div class="grid">
                         <a id="dl-postings" role="button" href="#">Download Postings (.xlsx)</a>
                         <a id="dl-news" role="button" class="secondary" href="#">Download News (.xlsx)</a>
-                        <a id="dl-contacts" role="button" class="secondary" href="#">Download Contacts (.xlsx)</a>
                     </div>
                 </article>
 
@@ -221,15 +175,12 @@
                                     <th>Names</th>
                                     <th>Postings</th>
                                     <th>News</th>
-                                    <th>Contacts</th>
-                                    <th>Enrichment</th>
-                                    <th>Email Verif.</th>
                                     <th>Created</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="history-body">
-                                <tr><td colspan="9">Loading...</td></tr>
+                                <tr><td colspan="6">Loading...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -292,7 +243,7 @@
         let currentSessionId = null;
         let pollInterval = null;
 
-        const ACTIVE_STATUSES = new Set(["resolving_names", "finding_postings", "finding_news", "finding_contacts", "enriching_contacts", "verifying_emails", "resuming"]);
+        const ACTIVE_STATUSES = new Set(["resolving_names", "finding_postings", "finding_news", "resuming"]);
 
         function stageCell(done, total, activeStatus, myStatus) {
             if (!total) return '<span style="color:#aaa">&mdash;</span>';
@@ -301,16 +252,6 @@
             if (isDone) return `<span class="status-badge status-completed">\u2713 ${total}</span>`;
             if (isActive || (ACTIVE_STATUSES.has(activeStatus) && done > 0 && !isDone))
                 return `<span class="status-badge status-processing">${done} / ${total}</span>`;
-            if (done > 0) return `<span class="status-badge status-processing">${done} / ${total}</span>`;
-            return '<span style="color:#aaa">&mdash;</span>';
-        }
-
-        function verificationCell(done, total, activeStatus) {
-            if (!total) return '<span style="color:#aaa">&mdash;</span>';
-            const isDone = done >= total;
-            const isActive = activeStatus === "verifying_emails";
-            if (isDone) return `<span class="status-badge status-completed">✓ ${total}</span>`;
-            if (isActive) return `<span class="status-badge status-processing">${done} / ${total}</span>`;
             if (done > 0) return `<span class="status-badge status-processing">${done} / ${total}</span>`;
             return '<span style="color:#aaa">&mdash;</span>';
         }
@@ -333,10 +274,6 @@
             formData.append("file", file);
             formData.append("run_postings", document.getElementById("chk-postings").checked);
             formData.append("run_news", document.getElementById("chk-news").checked);
-            formData.append("run_contacts", document.getElementById("chk-contacts").checked);
-            formData.append("run_enrichment", document.getElementById("chk-enrichment").checked);
-            formData.append("run_verification", document.getElementById("chk-verification").checked);
-
             try {
                 const resp = await fetch(`/api/projects/${PROJECT_ID}/sessions/upload`, {
                     method: "POST",
@@ -388,16 +325,6 @@
                 setStage("names",      data.names_done      || 0);
                 setStage("postings",   data.postings_done   || 0);
                 setStage("news",       data.news_done       || 0);
-                setStage("contacts",   data.contacts_done   || 0);
-                setStage("enrichment", data.enrichment_done || 0);
-
-                // Verification uses total_verification as denominator, not total_companies
-                const verTotal = data.total_verification || 0;
-                const verDone  = data.verification_done  || 0;
-                const verPct   = verTotal > 0 ? Math.round((verDone / verTotal) * 100) : 0;
-                document.getElementById("prog-verification-bar").value = verPct;
-                document.getElementById("prog-verification-text").textContent =
-                    verTotal ? `${verDone} / ${verTotal}` : "\u2014";
 
                 if (data.status === "completed") {
                     clearInterval(pollInterval);
@@ -421,7 +348,6 @@
             section.style.display = "block";
             document.getElementById("dl-postings").href = `/api/sessions/${sessionId}/postings/download`;
             document.getElementById("dl-news").href = `/api/sessions/${sessionId}/news/download`;
-            document.getElementById("dl-contacts").href = `/api/sessions/${sessionId}/contacts/download`;
         }
 
         // ---- History ----
@@ -432,7 +358,7 @@
                 const tbody = document.getElementById("history-body");
 
                 if (!sessions.length) {
-                    tbody.innerHTML = '<tr><td colspan="9">No files yet. Upload one above.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6">No files yet. Upload one above.</td></tr>';
                     return;
                 }
 
@@ -440,11 +366,11 @@
                     const date = s.created_at ? new Date(s.created_at).toLocaleString() : "-";
                     const total = s.total_companies || 0;
                     const isComplete = s.status === "completed";
-                    const isActive = ["uploading", "parsing", "resolving_names", "finding_postings", "finding_news", "finding_contacts", "enriching_contacts", "verifying_emails", "resuming"].includes(s.status);
+                    const isActive = ["uploading", "parsing", "resolving_names", "finding_postings", "finding_news", "resuming"].includes(s.status);
                     const canResume = !isComplete && !isActive && total > 0;
 
                     const dlLinks = isComplete
-                        ? `<a href="/api/sessions/${s.id}/postings/download">Postings</a> | <a href="/api/sessions/${s.id}/news/download">News</a> | <a href="/api/sessions/${s.id}/contacts/download">Contacts</a> | `
+                        ? `<a href="/api/sessions/${s.id}/postings/download">Postings</a> | <a href="/api/sessions/${s.id}/news/download">News</a> | `
                         : "";
                     const resumeLink = canResume
                         ? `<a href="#" onclick="resumeSession('${s.id}'); return false;">Resume</a> | `
@@ -460,9 +386,6 @@
                         <td>${stageCell(s.names_done, total, s.status, "resolving_names")}</td>
                         <td>${stageCell(s.postings_done, total, s.status, "finding_postings")}</td>
                         <td>${stageCell(s.news_done, total, s.status, "finding_news")}</td>
-                        <td>${stageCell(s.contacts_done, total, s.status, "finding_contacts")}</td>
-                        <td>${stageCell(s.enrichment_done, total, s.status, "enriching_contacts")}</td>
-                        <td>${verificationCell(s.verification_done, s.total_verification, s.status)}</td>
                         <td>${date}</td>
                         <td>${actions}</td>
                     </tr>`;
