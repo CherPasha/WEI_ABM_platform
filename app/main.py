@@ -40,6 +40,8 @@ async def _log_config():
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
+_KEEP_STATUSES = {"valid", "accept_all"}
+
 
 # ──────────────────────── HTML Pages ────────────────────────
 
@@ -446,7 +448,6 @@ async def download_project_contacts(project_id: str):
     }
 
     # 3. Fetch all contacts with contact_scan_id set, filtered by verification status
-    _KEEP_STATUSES = {"valid", "accept_all"}
     all_contacts: list[dict] = []
     for i in range(0, len(company_ids), 200):
         batch = company_ids[i:i + 200]
@@ -933,7 +934,6 @@ async def keyword_scan_download_with_contacts(project_id: str):
     id_to_name = {c["id"]: c.get("legal_name", "") for c in all_companies}
 
     # 5. Fetch contacts (same filter as /contacts/download)
-    _KEEP_STATUSES = {"valid", "accept_all"}
     raw_contacts: list[dict] = []
     for i in range(0, len(company_ids), 200):
         batch = company_ids[i:i + 200]

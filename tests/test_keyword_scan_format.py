@@ -136,3 +136,21 @@ def test_derive_qs_zero_values():
     assert row["Growth"] == 0
     assert row["Tech"] == 0
     assert str(row["Keywords Found"]) in ("", "nan")
+
+
+def test_contacts_found_column_injection():
+    """Verify the Contacts Found column injection logic used in the endpoint."""
+    import pandas as pd
+    summary = pd.DataFrame([
+        {"Company": "Acme Corp", "INN": "7712345678", "expand": 2, "scale": 0, "Growth (total)": 1},
+        {"Company": "Zero Inc",  "INN": "0000000000", "expand": 0, "scale": 0, "Growth (total)": 0},
+    ])
+    qs_df = derive_quick_summary_df(summary)
+    inn_to_count = {"7712345678": 5}
+    qs_df.insert(5, "Contacts Found", qs_df["INN"].apply(lambda inn: inn_to_count.get(str(inn), 0)))
+    acme = qs_df[qs_df["Company"] == "Acme Corp"].iloc[0]
+    zero = qs_df[qs_df["Company"] == "Zero Inc"].iloc[0]
+    assert acme["Contacts Found"] == 5
+    assert zero["Contacts Found"] == 0
+    # Contacts Found must be column 6 (index 5)
+    assert list(qs_df.columns).index("Contacts Found") == 5
