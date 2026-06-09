@@ -806,10 +806,16 @@ def _run_scan_task(job_id: str, project_id: str) -> None:
         buffer = generate_keyword_xlsx(scan_result)
         data = buffer.getvalue()
         # Persist to DB so Export tab can fetch it later
-        encoded = base64.b64encode(data).decode()
-        supabase.table("projects").update(
-            {"keyword_scan_result": encoded}
-        ).eq("id", project_id).execute()
+        try:
+            encoded = base64.b64encode(data).decode()
+            supabase.table("projects").update(
+                {"keyword_scan_result": encoded}
+            ).eq("id", project_id).execute()
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to persist keyword scan to DB for project %s", project_id
+            )
+            # Continue — in-memory job still usable; Export tab won't work until next success
         _scan_jobs[job_id] = {"status": "done", "result": data, "error": None, "ts": time.time()}
     except ValueError as e:
         _scan_jobs[job_id] = {"status": "error", "result": None, "error": str(e), "ts": time.time()}
@@ -824,35 +830,6 @@ async def keyword_scan_start(project_id: str, background_tasks: BackgroundTasks)
     _scan_jobs[job_id] = {"status": "running", "result": None, "error": None, "ts": time.time()}
     background_tasks.add_task(_run_scan_task, job_id, project_id)
     return {"job_id": job_id}
-
-
-@app.get("/api/projects/{project_id}/keyword-scan/{job_id}/status")
-async def keyword_scan_job_status(project_id: str, job_id: str):
-    now = time.time()
-    stale = [jid for jid, j in list(_scan_jobs.items()) if now - j["ts"] > _SCAN_JOB_TTL]
-    for jid in stale:
-        _scan_jobs.pop(jid, None)
-
-    job = _scan_jobs.get(job_id)
-    if not job:
-        return {"status": "not_found"}
-    return {"status": job["status"], "error": job.get("error")}
-
-
-@app.get("/api/projects/{project_id}/keyword-scan/{job_id}/download")
-async def keyword_scan_job_download(project_id: str, job_id: str):
-    job = _scan_jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found or expired")
-    if job["status"] != "done":
-        raise HTTPException(status_code=409, detail=f"Job not ready: {job['status']}")
-    data = job.pop("result")
-    _scan_jobs.pop(job_id, None)
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=keyword_analysis_{project_id[:8]}.xlsx"},
-    )
 
 
 @app.get("/api/projects/{project_id}/keyword-scan/status")
@@ -881,11 +858,43 @@ async def keyword_scan_db_download(project_id: str):
     if not result.data or result.data[0].get("keyword_scan_result") is None:
         raise HTTPException(status_code=404, detail="No keyword scan result saved for this project")
     encoded = result.data[0]["keyword_scan_result"]
-    data = base64.b64decode(encoded)
+    try:
+        data = base64.b64decode(encoded)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Stored keyword scan result is corrupted")
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f"attachment; filename=keyword_analysis_{project_id[:8]}.xlsx"
         },
+    )
+
+
+@app.get("/api/projects/{project_id}/keyword-scan/{job_id}/status")
+async def keyword_scan_job_status(project_id: str, job_id: str):
+    now = time.time()
+    stale = [jid for jid, j in list(_scan_jobs.items()) if now - j["ts"] > _SCAN_JOB_TTL]
+    for jid in stale:
+        _scan_jobs.pop(jid, None)
+
+    job = _scan_jobs.get(job_id)
+    if not job:
+        return {"status": "not_found"}
+    return {"status": job["status"], "error": job.get("error")}
+
+
+@app.get("/api/projects/{project_id}/keyword-scan/{job_id}/download")
+async def keyword_scan_job_download(project_id: str, job_id: str):
+    job = _scan_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+    if job["status"] != "done":
+        raise HTTPException(status_code=409, detail=f"Job not ready: {job['status']}")
+    data = job.pop("result")
+    _scan_jobs.pop(job_id, None)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=keyword_analysis_{project_id[:8]}.xlsx"},
     )
