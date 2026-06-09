@@ -218,15 +218,6 @@
                     </table>
                 </article>
 
-                <!-- Download Section -->
-                <article class="download-section" id="download-section">
-                    <h3>Download Results</h3>
-                    <div class="grid">
-                        <a id="dl-postings" role="button" href="#">Download Postings (.xlsx)</a>
-                        <a id="dl-news" role="button" class="secondary" href="#">Download News (.xlsx)</a>
-                    </div>
-                </article>
-
                 <!-- File History -->
                 <article>
                     <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -367,15 +358,51 @@
                         <p id="scan-contacts-status" style="font-size:0.9em; margin-top:0.5em;"></p>
                     </div>
 
-                    <div style="margin-top:1em;">
-                        <button id="dl-contacts-btn" onclick="downloadContacts()" class="secondary"
-                                style="display:none;">
-                            Download Contacts (.xlsx)
-                        </button>
-                    </div>
                 </article>
 
             </div><!-- /panel-roles -->
+
+            <!-- ── Export panel ── -->
+            <div id="panel-export">
+                <article>
+                    <h3>Export Results</h3>
+                    <p style="font-size:0.85em; color:var(--pico-muted-color); margin-bottom:1.2em;">
+                        Download outputs from completed steps. Grayed-out buttons become available once the corresponding step is done.
+                    </p>
+                    <div style="display:flex; flex-direction:column; gap:1em;">
+
+                        <div style="display:flex; align-items:center; gap:0.75em; flex-wrap:wrap;">
+                            <a id="dl-export-postings" role="button" href="#" class="export-btn-disabled">
+                                Download Postings (.xlsx)
+                            </a>
+                            <span id="dl-export-postings-hint" style="font-size:0.82em; color:var(--pico-muted-color);">Complete Upload step first</span>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:0.75em; flex-wrap:wrap;">
+                            <a id="dl-export-news" role="button" class="secondary export-btn-disabled" href="#">
+                                Download News (.xlsx)
+                            </a>
+                            <span id="dl-export-news-hint" style="font-size:0.82em; color:var(--pico-muted-color);">Complete Upload step first</span>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:0.75em; flex-wrap:wrap;">
+                            <a id="dl-export-keywords" role="button" class="contrast export-btn-disabled" href="#">
+                                Download Keyword Analysis (.xlsx)
+                            </a>
+                            <span id="dl-export-keywords-hint" style="font-size:0.82em; color:var(--pico-muted-color);">Run keyword scan first</span>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:0.75em; flex-wrap:wrap;">
+                            <a id="dl-export-contacts" role="button" class="secondary export-btn-disabled" href="#"
+                               onclick="downloadContacts(); return false;">
+                                Download Contacts (.xlsx)
+                            </a>
+                            <span id="dl-export-contacts-hint" style="font-size:0.82em; color:var(--pico-muted-color);">Complete contact scan first</span>
+                        </div>
+
+                    </div>
+                </article>
+            </div><!-- /panel-export -->
 
         </div><!-- /tabs -->
     </main>
