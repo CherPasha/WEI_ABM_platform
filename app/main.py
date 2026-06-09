@@ -16,7 +16,7 @@ from app.database import supabase
 from app.models import CreateKeywordGroup, RenameKeywordGroup, CreateKeyword, CreateStopWord, UpdateProject, ContactScanSettings
 from app.services.session_processor import process_session, resume_session
 from app.services.contact_scanner import run_contact_scan
-from app.services.keyword_scanner import scan_project_keywords, generate_keyword_xlsx
+from app.services.keyword_scanner import scan_project_keywords, generate_keyword_xlsx, derive_quick_summary_df
 from app.services.keyword_parser import parse_keyword_xlsx, parse_stop_word_xlsx, parse_roles_xlsx
 
 logging.basicConfig(level=logging.INFO)
@@ -867,6 +867,138 @@ async def keyword_scan_db_download(project_id: str):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f"attachment; filename=keyword_analysis_{project_id[:8]}.xlsx"
+        },
+    )
+
+
+@app.get("/api/projects/{project_id}/keyword-scan/download-with-contacts")
+async def keyword_scan_download_with_contacts(project_id: str):
+    """4-sheet XLSX: Quick_Summary (with Contacts Found), Summary, Details, Contacts."""
+    # 1. Load stored keyword scan XLSX
+    result = (
+        supabase.table("projects")
+        .select("keyword_scan_result")
+        .eq("id", project_id)
+        .execute()
+    )
+    if not result.data or result.data[0].get("keyword_scan_result") is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No keyword scan result found. Run a keyword scan first.",
+        )
+    try:
+        xlsx_bytes = base64.b64decode(result.data[0]["keyword_scan_result"])
+    except Exception:
+        raise HTTPException(status_code=500, detail="Stored keyword scan result is corrupted")
+
+    # 2. Parse Summary and Details sheets from stored XLSX
+    stored_buf = io.BytesIO(xlsx_bytes)
+    xf = pd.ExcelFile(stored_buf)
+    summary_df = xf.parse("Summary")
+    details_df = xf.parse("Details") if "Details" in xf.sheet_names else pd.DataFrame(
+        columns=["Company", "INN", "Keyword Group", "Keyword", "Total Matches", "From Postings", "From News", "Sentences"]
+    )
+
+    # 3. Derive Quick_Summary rows from Summary sheet
+    qs_df = derive_quick_summary_df(summary_df)
+
+    # 4. Fetch all companies for this project
+    sessions_result = (
+        supabase.table("sessions")
+        .select("id")
+        .eq("project_id", project_id)
+        .execute()
+    )
+    session_ids = [s["id"] for s in (sessions_result.data or [])]
+
+    all_companies: list[dict] = []
+    for i in range(0, len(session_ids), 200):
+        batch = session_ids[i:i + 200]
+        offset = 0
+        while True:
+            rows = (
+                supabase.table("companies")
+                .select("id, legal_name, inn")
+                .in_("session_id", batch)
+                .range(offset, offset + 999)
+                .execute()
+            ).data
+            all_companies.extend(rows)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+
+    company_ids = [c["id"] for c in all_companies]
+    id_to_inn = {c["id"]: str(c.get("inn") or "") for c in all_companies}
+    id_to_name = {c["id"]: c.get("legal_name", "") for c in all_companies}
+
+    # 5. Fetch contacts (same filter as /contacts/download)
+    _KEEP_STATUSES = {"valid", "accept_all"}
+    raw_contacts: list[dict] = []
+    for i in range(0, len(company_ids), 200):
+        batch = company_ids[i:i + 200]
+        offset = 0
+        while True:
+            rows = (
+                supabase.table("contacts")
+                .select("*")
+                .in_("company_id", batch)
+                .not_.is_("contact_scan_id", "null")
+                .range(offset, offset + 999)
+                .execute()
+            ).data
+            raw_contacts.extend(rows)
+            if len(rows) < 1000:
+                break
+            offset += 1000
+
+    contacts = [
+        c for c in raw_contacts
+        if c.get("email_status") is None or c.get("email_status") in _KEEP_STATUSES
+    ]
+
+    # 6. Count contacts per INN; add Contacts Found column to Quick_Summary (position 5 = col 6)
+    inn_to_count: dict[str, int] = {}
+    for c in contacts:
+        inn = id_to_inn.get(c.get("company_id", ""), "")
+        if inn:
+            inn_to_count[inn] = inn_to_count.get(inn, 0) + 1
+
+    qs_df.insert(
+        5,
+        "Contacts Found",
+        qs_df["INN"].apply(lambda inn: inn_to_count.get(str(inn), 0)),
+    )
+
+    # 7. Build Contacts sheet
+    if contacts:
+        for c in contacts:
+            c["company_name"] = id_to_name.get(c.get("company_id", ""), "")
+        contacts_df = pd.DataFrame(contacts)
+        for col in ("id", "session_id", "company_id", "contact_scan_id"):
+            if col in contacts_df.columns:
+                contacts_df = contacts_df.drop(columns=[col])
+        cols = ["company_name"] + [c for c in contacts_df.columns if c != "company_name"]
+        contacts_df = contacts_df[[c for c in cols if c in contacts_df.columns]]
+        if "company_name" in contacts_df.columns and "last_name" in contacts_df.columns:
+            contacts_df = contacts_df.sort_values(["company_name", "last_name"], na_position="last")
+    else:
+        contacts_df = pd.DataFrame(columns=["company_name"])
+
+    # 8. Write 4-sheet XLSX
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        qs_df.to_excel(writer, sheet_name="Quick_Summary", index=False)
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+        details_df.to_excel(writer, sheet_name="Details", index=False)
+        contacts_df.to_excel(writer, sheet_name="Contacts", index=False)
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename=keyword_scan_with_contacts_{project_id[:8]}.xlsx"
         },
     )
 

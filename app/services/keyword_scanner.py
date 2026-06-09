@@ -352,3 +352,39 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
         details_df.to_excel(writer, sheet_name="Details", index=False)
     buffer.seek(0)
     return buffer
+
+
+def derive_quick_summary_df(summary_df: pd.DataFrame) -> pd.DataFrame:
+    """Reconstruct Quick_Summary rows from a parsed Summary sheet DataFrame.
+
+    Columns ending with ' (total)' are group total columns — strip the suffix
+    for the display name, use the value as the per-group keyword count.
+    All other non-Company/INN columns are individual keyword columns.
+    """
+    total_cols = [c for c in summary_df.columns if c.endswith(" (total)")]
+    kw_cols = [
+        c for c in summary_df.columns
+        if c not in ("Company", "INN") and not c.endswith(" (total)")
+    ]
+
+    rows = []
+    for _, r in summary_df.iterrows():
+        total_kw = int(sum(1 for c in kw_cols if r[c] > 0))
+        total_groups = int(sum(1 for c in total_cols if r[c] > 0))
+        found_kws = [c for c in kw_cols if r[c] > 0]
+        row: dict = {
+            "Company": r["Company"],
+            "INN": str(r["INN"]),
+            "Total Keywords Found": total_kw,
+            "Groups With Hits": total_groups,
+            "Keywords Found": ", ".join(found_kws),
+        }
+        for tc in total_cols:
+            group_name = tc[: -len(" (total)")]
+            row[group_name] = int(r[tc])
+        rows.append(row)
+
+    group_names = [tc[: -len(" (total)")] for tc in total_cols]
+    cols = ["Company", "INN", "Total Keywords Found", "Groups With Hits", "Keywords Found"] + group_names
+    df = pd.DataFrame(rows)
+    return df[[c for c in cols if c in df.columns]]

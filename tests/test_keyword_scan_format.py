@@ -75,3 +75,64 @@ def test_quick_summary_zero_company():
     assert row["Tech"] == 0
     # Keywords Found is empty string or NaN when no matches
     assert str(row["Keywords Found"]) in ("", "nan")
+
+
+from app.services.keyword_scanner import derive_quick_summary_df
+
+
+def _summary_df():
+    return pd.DataFrame([
+        {
+            "Company": "Acme Corp",
+            "INN": "7712345678",
+            "expand": 2,
+            "scale": 0,
+            "Growth (total)": 1,
+            "AI": 1,
+            "ML": 3,
+            "Tech (total)": 2,
+        },
+        {
+            "Company": "Zero Inc",
+            "INN": "0000000000",
+            "expand": 0,
+            "scale": 0,
+            "Growth (total)": 0,
+            "AI": 0,
+            "ML": 0,
+            "Tech (total)": 0,
+        },
+    ])
+
+
+def test_derive_qs_columns():
+    df = derive_quick_summary_df(_summary_df())
+    assert list(df.columns[:5]) == [
+        "Company", "INN", "Total Keywords Found", "Groups With Hits", "Keywords Found"
+    ]
+    assert "Growth" in df.columns
+    assert "Tech" in df.columns
+
+
+def test_derive_qs_acme_values():
+    df = derive_quick_summary_df(_summary_df())
+    row = df[df["Company"] == "Acme Corp"].iloc[0]
+    assert row["Total Keywords Found"] == 3   # expand, AI, ML
+    assert row["Groups With Hits"] == 2
+    assert row["Growth"] == 1
+    assert row["Tech"] == 2
+    kws = row["Keywords Found"]
+    assert "expand" in kws
+    assert "AI" in kws
+    assert "ML" in kws
+    assert "scale" not in kws
+
+
+def test_derive_qs_zero_values():
+    df = derive_quick_summary_df(_summary_df())
+    row = df[df["Company"] == "Zero Inc"].iloc[0]
+    assert row["Total Keywords Found"] == 0
+    assert row["Groups With Hits"] == 0
+    assert row["Growth"] == 0
+    assert row["Tech"] == 0
+    assert str(row["Keywords Found"]) in ("", "nan")
