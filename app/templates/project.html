@@ -106,9 +106,14 @@
                 <article>
                     <h3>Target Roles for Contact Enrichment</h3>
                     <div id="roles-list" class="roles-list"></div>
-                    <div style="display:flex; gap:0.5em; align-items:center; margin-top:0.5em;">
+                    <div style="display:flex; gap:0.5em; align-items:center; margin-top:0.5em; flex-wrap:wrap;">
                         <input type="text" id="new-role-input" placeholder="Add role, e.g. CEO, CTO" style="margin:0; padding:0.3em 0.5em; font-size:0.9em;">
                         <button onclick="addRole()" style="margin:0; padding:0.3em 0.8em; font-size:0.85em; white-space:nowrap;">Add</button>
+                        <button id="import-roles-btn" class="secondary" style="margin:0; padding:0.3em 0.8em; font-size:0.85em; white-space:nowrap;"
+                                onclick="document.getElementById('roles-import-input').click()">Import from xlsx</button>
+                        <input type="file" id="roles-import-input" accept=".xlsx" style="display:none"
+                               onchange="importRolesFile(this)">
+                        <span id="roles-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
                     </div>
                 </article>
 
@@ -786,6 +791,36 @@
             projectRoles.splice(idx, 1);
             renderRoles();
             await saveRoles();
+        }
+
+        async function importRolesFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const btn = document.getElementById("import-roles-btn");
+            const status = document.getElementById("roles-import-status");
+            btn.disabled = true;
+            status.textContent = "Importing...";
+            try {
+                const formData = new FormData();
+                formData.append("file", file);
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/roles/import`, {
+                    method: "POST",
+                    body: formData,
+                });
+                let data = {};
+                try { data = await resp.json(); } catch (_) {}
+                if (!resp.ok) {
+                    status.textContent = "Error: " + (data.detail || resp.statusText || "Import failed");
+                } else {
+                    status.textContent = `Done: ${data.added} added, ${data.skipped} skipped`;
+                    await loadRoles();
+                }
+            } catch (err) {
+                status.textContent = "Error: " + err.message;
+            } finally {
+                btn.disabled = false;
+                input.value = "";
+            }
         }
 
         // Load on page load
