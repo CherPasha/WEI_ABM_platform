@@ -392,6 +392,13 @@
                         </div>
 
                         <div style="display:flex; align-items:center; gap:0.75em; flex-wrap:wrap;">
+                            <a id="dl-export-keywords-contacts" role="button" class="contrast export-btn-disabled" href="#">
+                                Download Keyword + Contacts (.xlsx)
+                            </a>
+                            <span id="dl-export-keywords-contacts-hint" style="font-size:0.82em; color:var(--pico-muted-color);">Run keyword scan first</span>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:0.75em; flex-wrap:wrap;">
                             <a id="dl-export-contacts" role="button" class="secondary export-btn-disabled" href="#">
                                 Download Contacts (.xlsx)
                             </a>
@@ -1045,10 +1052,12 @@
             const newsHint     = document.getElementById('dl-export-news-hint');
             const kwBtn        = document.getElementById('dl-export-keywords');
             const kwHint       = document.getElementById('dl-export-keywords-hint');
+            const kwContactsBtn  = document.getElementById('dl-export-keywords-contacts');
+            const kwContactsHint = document.getElementById('dl-export-keywords-contacts-hint');
             const contactsBtn  = document.getElementById('dl-export-contacts');
             const contactsHint = document.getElementById('dl-export-contacts-hint');
 
-            if (!postingsBtn || !newsBtn || !kwBtn || !contactsBtn) {
+            if (!postingsBtn || !newsBtn || !kwBtn || !contactsBtn || !kwContactsBtn) {
                 console.warn('updateExportButtons: Export panel elements not found');
                 return;
             }
@@ -1079,6 +1088,16 @@
                 kwBtn.href = '#';
                 kwBtn.classList.add('export-btn-disabled');
                 kwHint.style.display = '';
+            }
+
+            if (scanStatus.has_result) {
+                kwContactsBtn.href = `/api/projects/${PROJECT_ID}/keyword-scan/download-with-contacts`;
+                kwContactsBtn.classList.remove('export-btn-disabled');
+                kwContactsHint.style.display = 'none';
+            } else {
+                kwContactsBtn.href = '#';
+                kwContactsBtn.classList.add('export-btn-disabled');
+                kwContactsHint.style.display = '';
             }
 
             if (contactScan.status === 'completed') {
