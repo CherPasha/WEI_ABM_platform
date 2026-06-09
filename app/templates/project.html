@@ -1044,12 +1044,116 @@
             a.remove();
         }
 
+        // ---- Tab State Management ----
+
+        function setTabState(tabName, state) {
+            const label = document.querySelector(`.tab-nav label[for="tab-${tabName}"]`);
+            if (!label) return;
+            label.classList.remove('tab-yellow', 'tab-green');
+            if (state) label.classList.add(`tab-${state}`);
+        }
+
+        function updateExportButtons(sessions, scanStatus, contactScan) {
+            const completedSession = sessions.find(s => s.status === 'completed');
+
+            const postingsBtn  = document.getElementById('dl-export-postings');
+            const postingsHint = document.getElementById('dl-export-postings-hint');
+            const newsBtn      = document.getElementById('dl-export-news');
+            const newsHint     = document.getElementById('dl-export-news-hint');
+            const kwBtn        = document.getElementById('dl-export-keywords');
+            const kwHint       = document.getElementById('dl-export-keywords-hint');
+            const contactsBtn  = document.getElementById('dl-export-contacts');
+            const contactsHint = document.getElementById('dl-export-contacts-hint');
+
+            if (completedSession) {
+                postingsBtn.href = `/api/sessions/${completedSession.id}/postings/download`;
+                postingsBtn.classList.remove('export-btn-disabled');
+                postingsHint.style.display = 'none';
+
+                newsBtn.href = `/api/sessions/${completedSession.id}/news/download`;
+                newsBtn.classList.remove('export-btn-disabled');
+                newsHint.style.display = 'none';
+            } else {
+                postingsBtn.href = '#';
+                postingsBtn.classList.add('export-btn-disabled');
+                postingsHint.style.display = '';
+
+                newsBtn.href = '#';
+                newsBtn.classList.add('export-btn-disabled');
+                newsHint.style.display = '';
+            }
+
+            if (scanStatus.has_result) {
+                kwBtn.href = `/api/projects/${PROJECT_ID}/keyword-scan/download`;
+                kwBtn.classList.remove('export-btn-disabled');
+                kwHint.style.display = 'none';
+            } else {
+                kwBtn.href = '#';
+                kwBtn.classList.add('export-btn-disabled');
+                kwHint.style.display = '';
+            }
+
+            if (contactScan.status === 'completed') {
+                contactsBtn.onclick = () => { downloadContacts(); return false; };
+                contactsBtn.classList.remove('export-btn-disabled');
+                contactsHint.style.display = 'none';
+            } else {
+                contactsBtn.onclick = null;
+                contactsBtn.classList.add('export-btn-disabled');
+                contactsHint.style.display = '';
+            }
+        }
+
+        async function refreshTabStates() {
+            try {
+                const [sessionsResp, stopWordsResp, scanStatusResp, projectResp, contactScanResp, kwGroupsResp] =
+                    await Promise.all([
+                        fetch(`/api/projects/${PROJECT_ID}/sessions`),
+                        fetch(`/api/projects/${PROJECT_ID}/stop-words`),
+                        fetch(`/api/projects/${PROJECT_ID}/keyword-scan/status`),
+                        fetch(`/api/projects/${PROJECT_ID}/details`),
+                        fetch(`/api/projects/${PROJECT_ID}/contact-scan/latest/status`),
+                        fetch(`/api/projects/${PROJECT_ID}/keyword-groups`),
+                    ]);
+
+                const sessions    = await sessionsResp.json();
+                const stopWords   = await stopWordsResp.json();
+                const scanStatus  = await scanStatusResp.json();
+                const project     = await projectResp.json();
+                const contactScan = await contactScanResp.json();
+                const kwGroups    = await kwGroupsResp.json();
+
+                // Tab 1 — Upload
+                const hasCompleted  = sessions.some(s => s.status === 'completed');
+                const hasAnySession = sessions.length > 0;
+                setTabState('upload', hasCompleted ? 'green' : hasAnySession ? 'yellow' : '');
+
+                // Tab 2 — Stop Words
+                setTabState('stopwords', stopWords.length > 0 ? 'yellow' : '');
+
+                // Tab 3 — Keywords
+                const hasKeywords = kwGroups.some(g => g.keywords && g.keywords.length > 0);
+                setTabState('keywords', scanStatus.has_result ? 'green' : hasKeywords ? 'yellow' : '');
+
+                // Tab 4 — Roles
+                const hasRoles          = (project.target_roles || []).length > 0;
+                const contactScanDone   = contactScan.status === 'completed';
+                setTabState('roles', contactScanDone ? 'green' : hasRoles ? 'yellow' : '');
+
+                // Update Export tab download buttons
+                updateExportButtons(sessions, scanStatus, contactScan);
+            } catch (err) {
+                console.error('refreshTabStates error:', err);
+            }
+        }
+
         // Load on page load
         loadRoles();
         loadContactScanSettings();
         loadHistory();
         loadStopWords();
         loadKeywordGroups();
+        refreshTabStates();
         // Initialize contact scan state on page load
         fetch(`/api/projects/${PROJECT_ID}/contact-scan/latest/status`)
             .then(r => r.json())
