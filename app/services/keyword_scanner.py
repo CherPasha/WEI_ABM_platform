@@ -259,14 +259,44 @@ def scan_project_keywords(project_id: str) -> dict:
 
 
 def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
-    """Generate a two-sheet XLSX from scan results."""
+    """Generate a three-sheet XLSX from scan results."""
     groups = scan_result["groups"]
     companies = scan_result["companies"]
 
-    # ── Sheet 1: Summary ──
+    # ── Sheet 1: Quick_Summary ──
+    qs_rows = []
+    for company in companies:
+        total_kw = 0
+        total_groups = 0
+        found_kw_names: list[str] = []
+        row: dict = {"Company": company["name"], "INN": company["inn"]}
+        for group in groups:
+            group_kw_count = 0
+            for kw in group["keywords"]:
+                count = company["results"].get(kw, {}).get("count", 0)
+                if count > 0:
+                    group_kw_count += 1
+                    total_kw += 1
+                    found_kw_names.append(kw)
+            row[group["name"]] = group_kw_count
+            if group_kw_count > 0:
+                total_groups += 1
+        row["Total Keywords Found"] = total_kw
+        row["Groups With Hits"] = total_groups
+        row["Keywords Found"] = ", ".join(found_kw_names)
+        qs_rows.append(row)
+
+    qs_df = pd.DataFrame(qs_rows)
+    qs_cols = ["Company", "INN", "Total Keywords Found", "Groups With Hits", "Keywords Found"] + [
+        g["name"] for g in groups
+    ]
+    qs_cols = [c for c in qs_cols if c in qs_df.columns]
+    qs_df = qs_df[qs_cols]
+
+    # ── Sheet 2: Summary ──
     summary_rows = []
     for company in companies:
-        row: dict = {"Company": company["name"], "INN": company["inn"]}
+        row = {"Company": company["name"], "INN": company["inn"]}
         for group in groups:
             group_found = 0
             for kw in group["keywords"]:
@@ -278,8 +308,6 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
         summary_rows.append(row)
 
     summary_df = pd.DataFrame(summary_rows)
-
-    # Order columns: Company, INN, then per group: keywords + group total
     ordered_cols = ["Company", "INN"]
     for group in groups:
         for kw in group["keywords"]:
@@ -288,8 +316,7 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
     ordered_cols = [c for c in ordered_cols if c in summary_df.columns]
     summary_df = summary_df[ordered_cols]
 
-    # ── Sheet 2: Details ──
-    # One row per company × keyword; all matching sentences combined into one cell
+    # ── Sheet 3: Details ──
     detail_rows = []
     for company in companies:
         for group in groups:
@@ -320,6 +347,7 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        qs_df.to_excel(writer, sheet_name="Quick_Summary", index=False)
         summary_df.to_excel(writer, sheet_name="Summary", index=False)
         details_df.to_excel(writer, sheet_name="Details", index=False)
     buffer.seek(0)
