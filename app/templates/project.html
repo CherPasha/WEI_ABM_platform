@@ -18,7 +18,6 @@
         .status-failed { background: #f8d7da; color: #721c24; }
         .status-processing { background: #fff3cd; color: #856404; }
         .progress-section { display: none; }
-        .download-section { display: none; }
         #error-msg { color: var(--pico-color-red-500); display: none; }
         table { font-size: 0.9em; }
         .back-link { font-size: 0.9em; text-decoration: none; }
@@ -54,32 +53,88 @@
         .tabs > div[id^="panel-"] { display: none; }
 
         #tab-upload:checked    ~ #panel-upload    { display: block; }
-        #tab-keywords:checked  ~ #panel-keywords  { display: block; }
         #tab-stopwords:checked ~ #panel-stopwords { display: block; }
+        #tab-keywords:checked  ~ #panel-keywords  { display: block; }
         #tab-roles:checked     ~ #panel-roles     { display: block; }
+        #tab-export:checked    ~ #panel-export    { display: block; }
 
+        /* ── Step bar ── */
         .tab-nav {
             display: flex;
-            border-bottom: 2px solid var(--pico-muted-border-color);
+            align-items: center;
             margin-bottom: 1.5em;
             gap: 0;
+            border-bottom: none;
+            flex-wrap: wrap;
         }
         .tab-nav label {
-            padding: 0.6em 1.5em;
+            display: flex;
+            align-items: center;
+            gap: 0.4em;
+            padding: 0.5em 0.6em;
             cursor: pointer;
             font-weight: 500;
-            border-bottom: 3px solid transparent;
-            margin-bottom: -2px;
             color: var(--pico-muted-color);
         }
         .tab-nav label:hover { color: var(--pico-color); }
+        .step-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.7em;
+            height: 1.7em;
+            border-radius: 50%;
+            background: var(--pico-muted-border-color);
+            color: var(--pico-muted-color);
+            font-size: 0.82em;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .step-arrow {
+            color: var(--pico-muted-color);
+            font-size: 1.1em;
+            padding: 0 0.15em;
+            pointer-events: none;
+            user-select: none;
+        }
 
-        #tab-upload:checked    ~ .tab-nav label[for="tab-upload"],
-        #tab-keywords:checked  ~ .tab-nav label[for="tab-keywords"],
-        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"],
-        #tab-roles:checked     ~ .tab-nav label[for="tab-roles"] {
-            border-bottom-color: var(--pico-primary);
+        /* Active tab — primary circle when no state class */
+        #tab-upload:checked    ~ .tab-nav label[for="tab-upload"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-keywords:checked  ~ .tab-nav label[for="tab-keywords"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-roles:checked     ~ .tab-nav label[for="tab-roles"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-export:checked    ~ .tab-nav label[for="tab-export"] .step-num {
+            background: var(--pico-primary);
+            color: white;
+        }
+        #tab-upload:checked    ~ .tab-nav label[for="tab-upload"]:not(.tab-yellow):not(.tab-green),
+        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"]:not(.tab-yellow):not(.tab-green),
+        #tab-keywords:checked  ~ .tab-nav label[for="tab-keywords"]:not(.tab-yellow):not(.tab-green),
+        #tab-roles:checked     ~ .tab-nav label[for="tab-roles"]:not(.tab-yellow):not(.tab-green),
+        #tab-export:checked    ~ .tab-nav label[for="tab-export"] {
             color: var(--pico-primary);
+            font-weight: 700;
+        }
+
+        /* Yellow state (file uploaded / words added) */
+        .tab-nav label.tab-yellow .step-num {
+            background: #ffc107;
+            color: #5a3e00;
+        }
+        .tab-nav label.tab-yellow { color: #856404; }
+
+        /* Green state (processing complete) */
+        .tab-nav label.tab-green .step-num {
+            background: #198754;
+            color: white;
+        }
+        .tab-nav label.tab-green { color: #198754; }
+
+        /* Export disabled download buttons */
+        .export-btn-disabled {
+            opacity: 0.4;
+            pointer-events: none;
+            cursor: not-allowed;
         }
     </style>
 </head>
@@ -92,15 +147,21 @@
 
         <div class="tabs">
             <input type="radio" id="tab-upload"    name="tab" checked>
-            <input type="radio" id="tab-keywords"  name="tab">
             <input type="radio" id="tab-stopwords" name="tab">
+            <input type="radio" id="tab-keywords"  name="tab">
             <input type="radio" id="tab-roles"     name="tab">
+            <input type="radio" id="tab-export"    name="tab">
 
             <nav class="tab-nav">
-                <label for="tab-upload">Upload</label>
-                <label for="tab-keywords">Keywords</label>
-                <label for="tab-stopwords">Stop Words</label>
-                <label for="tab-roles">Roles</label>
+                <label for="tab-upload">   <span class="step-num">1</span> Upload</label>
+                <span class="step-arrow" aria-hidden="true">›</span>
+                <label for="tab-stopwords"><span class="step-num">2</span> Stop Words</label>
+                <span class="step-arrow" aria-hidden="true">›</span>
+                <label for="tab-keywords"> <span class="step-num">3</span> Keywords</label>
+                <span class="step-arrow" aria-hidden="true">›</span>
+                <label for="tab-roles">    <span class="step-num">4</span> Roles</label>
+                <span class="step-arrow" aria-hidden="true">›</span>
+                <label for="tab-export">   <span class="step-num">5</span> Export</label>
             </nav>
 
             <!-- ── Upload panel ── -->
@@ -156,15 +217,6 @@
                     </table>
                 </article>
 
-                <!-- Download Section -->
-                <article class="download-section" id="download-section">
-                    <h3>Download Results</h3>
-                    <div class="grid">
-                        <a id="dl-postings" role="button" href="#">Download Postings (.xlsx)</a>
-                        <a id="dl-news" role="button" class="secondary" href="#">Download News (.xlsx)</a>
-                    </div>
-                </article>
-
                 <!-- File History -->
                 <article>
                     <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -192,29 +244,6 @@
 
             </div><!-- /panel-upload -->
 
-            <!-- ── Keywords panel ── -->
-            <div id="panel-keywords">
-
-                <!-- Keyword Analysis -->
-                <article>
-                    <h3>Keyword Analysis</h3>
-                    <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
-                        <input type="text" id="new-group-name" placeholder="Group name (e.g. ABM)" style="margin:0;">
-                        <button onclick="addKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
-                        <button id="import-kw-btn" class="secondary" style="margin:0; white-space:nowrap;"
-                                onclick="document.getElementById('kw-import-input').click()">Import from file</button>
-                        <input type="file" id="kw-import-input" accept=".xlsx" style="display:none"
-                               onchange="importKeywordFile(this)">
-                        <span id="kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
-                    </div>
-                    <div id="keyword-groups-container"></div>
-                    <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
-                        Scan Postings &amp; Download XLSX
-                    </button>
-                </article>
-
-            </div><!-- /panel-keywords -->
-
             <!-- ── Stop Words panel ── -->
             <div id="panel-stopwords">
 
@@ -237,6 +266,29 @@
                 </article>
 
             </div><!-- /panel-stopwords -->
+
+            <!-- ── Keywords panel ── -->
+            <div id="panel-keywords">
+
+                <!-- Keyword Analysis -->
+                <article>
+                    <h3>Keyword Analysis</h3>
+                    <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
+                        <input type="text" id="new-group-name" placeholder="Group name (e.g. ABM)" style="margin:0;">
+                        <button onclick="addKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
+                        <button id="import-kw-btn" class="secondary" style="margin:0; white-space:nowrap;"
+                                onclick="document.getElementById('kw-import-input').click()">Import from file</button>
+                        <input type="file" id="kw-import-input" accept=".xlsx" style="display:none"
+                               onchange="importKeywordFile(this)">
+                        <span id="kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
+                    </div>
+                    <div id="keyword-groups-container"></div>
+                    <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
+                        Run Keyword Scan
+                    </button>
+                </article>
+
+            </div><!-- /panel-keywords -->
 
             <!-- ── Roles panel ── -->
             <div id="panel-roles">
@@ -305,15 +357,50 @@
                         <p id="scan-contacts-status" style="font-size:0.9em; margin-top:0.5em;"></p>
                     </div>
 
-                    <div style="margin-top:1em;">
-                        <button id="dl-contacts-btn" onclick="downloadContacts()" class="secondary"
-                                style="display:none;">
-                            Download Contacts (.xlsx)
-                        </button>
-                    </div>
                 </article>
 
             </div><!-- /panel-roles -->
+
+            <!-- ── Export panel ── -->
+            <div id="panel-export">
+                <article>
+                    <h3>Export Results</h3>
+                    <p style="font-size:0.85em; color:var(--pico-muted-color); margin-bottom:1.2em;">
+                        Download outputs from completed steps. Grayed-out buttons become available once the corresponding step is done.
+                    </p>
+                    <div style="display:flex; flex-direction:column; gap:1em;">
+
+                        <div style="display:flex; align-items:center; gap:0.75em; flex-wrap:wrap;">
+                            <a id="dl-export-postings" role="button" class="export-btn-disabled" href="#">
+                                Download Postings (.xlsx)
+                            </a>
+                            <span id="dl-export-postings-hint" style="font-size:0.82em; color:var(--pico-muted-color);">Complete Upload step first</span>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:0.75em; flex-wrap:wrap;">
+                            <a id="dl-export-news" role="button" class="secondary export-btn-disabled" href="#">
+                                Download News (.xlsx)
+                            </a>
+                            <span id="dl-export-news-hint" style="font-size:0.82em; color:var(--pico-muted-color);">Complete Upload step first</span>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:0.75em; flex-wrap:wrap;">
+                            <a id="dl-export-keywords" role="button" class="contrast export-btn-disabled" href="#">
+                                Download Keyword Analysis (.xlsx)
+                            </a>
+                            <span id="dl-export-keywords-hint" style="font-size:0.82em; color:var(--pico-muted-color);">Run keyword scan first</span>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:0.75em; flex-wrap:wrap;">
+                            <a id="dl-export-contacts" role="button" class="secondary export-btn-disabled" href="#">
+                                Download Contacts (.xlsx)
+                            </a>
+                            <span id="dl-export-contacts-hint" style="font-size:0.82em; color:var(--pico-muted-color);">Complete contact scan first</span>
+                        </div>
+
+                    </div>
+                </article>
+            </div><!-- /panel-export -->
 
         </div><!-- /tabs -->
     </main>
@@ -370,7 +457,6 @@
 
                 currentSessionId = data.session_id;
                 document.getElementById("progress-section").style.display = "block";
-                document.getElementById("download-section").style.display = "none";
                 startPolling(currentSessionId);
             } catch (err) {
                 errorEl.textContent = "Upload failed: " + err.message;
@@ -409,8 +495,8 @@
 
                 if (data.status === "completed") {
                     clearInterval(pollInterval);
-                    showDownloadLinks(sessionId);
                     loadHistory();
+                    refreshTabStates();
                 } else if (data.status === "failed") {
                     clearInterval(pollInterval);
                     const errorEl = document.getElementById("error-msg");
@@ -421,14 +507,6 @@
             } catch (err) {
                 console.error("Polling error:", err);
             }
-        }
-
-        // ---- Downloads ----
-        function showDownloadLinks(sessionId) {
-            const section = document.getElementById("download-section");
-            section.style.display = "block";
-            document.getElementById("dl-postings").href = `/api/sessions/${sessionId}/postings/download`;
-            document.getElementById("dl-news").href = `/api/sessions/${sessionId}/news/download`;
         }
 
         // ---- History ----
@@ -483,7 +561,6 @@
             if (data.error) { alert(data.error); return; }
             currentSessionId = sessionId;
             document.getElementById("progress-section").style.display = "block";
-            document.getElementById("download-section").style.display = "none";
             document.getElementById("error-msg").style.display = "none";
             startPolling(sessionId);
             loadHistory();
@@ -532,6 +609,7 @@
             if (resp.ok) {
                 input.value = "";
                 loadStopWords();
+                refreshTabStates();
             } else {
                 let data = {};
                 try { data = await resp.json(); } catch (_) {}
@@ -549,6 +627,7 @@
                 return;
             }
             loadStopWords();
+            refreshTabStates();
         }
 
         async function importStopWordFile(input) {
@@ -573,6 +652,7 @@
                 } else {
                     status.textContent = `Done: ${data.words_added} added, ${data.words_skipped} skipped`;
                     loadStopWords();
+                    refreshTabStates();
                 }
             } catch (err) {
                 status.textContent = "Error: " + err.message;
@@ -630,12 +710,14 @@
             });
             input.value = "";
             loadKeywordGroups();
+            refreshTabStates();
         }
 
         async function deleteKeywordGroup(groupId) {
             if (!confirm("Delete this keyword group and all its keywords?")) return;
             await fetch(`/api/keyword-groups/${groupId}`, { method: "DELETE" });
             loadKeywordGroups();
+            refreshTabStates();
         }
 
         async function addKeyword(groupId) {
@@ -649,11 +731,13 @@
             });
             input.value = "";
             loadKeywordGroups();
+            refreshTabStates();
         }
 
         async function deleteKeyword(keywordId) {
             await fetch(`/api/keywords/${keywordId}`, { method: "DELETE" });
             loadKeywordGroups();
+            refreshTabStates();
         }
 
         async function importKeywordFile(input) {
@@ -678,6 +762,7 @@
                 } else {
                     status.textContent = `Done: ${data.groups_created} groups, ${data.keywords_added} keywords added, ${data.keywords_skipped} skipped`;
                     loadKeywordGroups();
+                    refreshTabStates();
                 }
             } catch (err) {
                 status.textContent = "Error: " + err.message;
@@ -693,7 +778,6 @@
             btn.setAttribute("aria-busy", "true");
             btn.disabled = true;
             try {
-                // Start the scan as a background job
                 const startResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/start`, {method: "POST"});
                 if (!startResp.ok) {
                     const err = await startResp.json().catch(() => ({}));
@@ -702,7 +786,6 @@
                 }
                 const {job_id} = await startResp.json();
 
-                // Poll until done
                 while (true) {
                     await new Promise(r => setTimeout(r, 2000));
                     const statusResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/${job_id}/status`);
@@ -718,22 +801,8 @@
                     }
                 }
 
-                // Download the result
-                const dlResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/${job_id}/download`);
-                if (!dlResp.ok) {
-                    const err = await dlResp.json().catch(() => ({}));
-                    alert(err.detail || "Download failed");
-                    return;
-                }
-                const blob = await dlResp.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "keyword_analysis.xlsx";
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
+                // Scan complete — update tab states and Export tab buttons
+                refreshTabStates();
             } catch (err) {
                 alert("Scan failed: " + err.message);
             } finally {
@@ -789,12 +858,14 @@
             input.value = "";
             renderRoles();
             await saveRoles();
+            refreshTabStates();
         }
 
         async function removeRole(idx) {
             projectRoles.splice(idx, 1);
             renderRoles();
             await saveRoles();
+            refreshTabStates();
         }
 
         async function importRolesFile(input) {
@@ -819,6 +890,7 @@
                 } else {
                     status.textContent = `Done: ${data.added} added, ${data.skipped} skipped`;
                     loadRoles();
+                    refreshTabStates();
                 }
             } catch (err) {
                 status.textContent = "Error: " + err.message;
@@ -876,7 +948,6 @@
                     return;
                 }
                 document.getElementById("contact-scan-progress").style.display = "block";
-                document.getElementById("dl-contacts-btn").style.display = "none";
                 document.getElementById("scan-contacts-status").textContent = "";
                 startContactScanPolling();
             } catch (err) {
@@ -930,7 +1001,7 @@
                     statusEl.textContent =
                         `Completed — ${data.contacts_added || 0} contacts added`;
                     statusEl.style.color = "var(--pico-color-green-500)";
-                    document.getElementById("dl-contacts-btn").style.display = "inline-block";
+                    refreshTabStates();
                 } else if (data.status === "failed") {
                     clearInterval(contactScanPollInterval);
                     btn.disabled = false;
@@ -956,6 +1027,120 @@
             a.remove();
         }
 
+        // ---- Tab State Management ----
+
+        function setTabState(tabName, state) {
+            const label = document.querySelector(`.tab-nav label[for="tab-${tabName}"]`);
+            if (!label) return;
+            label.classList.remove('tab-yellow', 'tab-green');
+            if (state) label.classList.add(`tab-${state}`);
+        }
+
+        function updateExportButtons(sessions, scanStatus, contactScan) {
+            const completedSession = sessions.find(s => s.status === 'completed');
+
+            const postingsBtn  = document.getElementById('dl-export-postings');
+            const postingsHint = document.getElementById('dl-export-postings-hint');
+            const newsBtn      = document.getElementById('dl-export-news');
+            const newsHint     = document.getElementById('dl-export-news-hint');
+            const kwBtn        = document.getElementById('dl-export-keywords');
+            const kwHint       = document.getElementById('dl-export-keywords-hint');
+            const contactsBtn  = document.getElementById('dl-export-contacts');
+            const contactsHint = document.getElementById('dl-export-contacts-hint');
+
+            if (!postingsBtn || !newsBtn || !kwBtn || !contactsBtn) {
+                console.warn('updateExportButtons: Export panel elements not found');
+                return;
+            }
+
+            if (completedSession) {
+                postingsBtn.href = `/api/sessions/${completedSession.id}/postings/download`;
+                postingsBtn.classList.remove('export-btn-disabled');
+                postingsHint.style.display = 'none';
+
+                newsBtn.href = `/api/sessions/${completedSession.id}/news/download`;
+                newsBtn.classList.remove('export-btn-disabled');
+                newsHint.style.display = 'none';
+            } else {
+                postingsBtn.href = '#';
+                postingsBtn.classList.add('export-btn-disabled');
+                postingsHint.style.display = '';
+
+                newsBtn.href = '#';
+                newsBtn.classList.add('export-btn-disabled');
+                newsHint.style.display = '';
+            }
+
+            if (scanStatus.has_result) {
+                kwBtn.href = `/api/projects/${PROJECT_ID}/keyword-scan/download`;
+                kwBtn.classList.remove('export-btn-disabled');
+                kwHint.style.display = 'none';
+            } else {
+                kwBtn.href = '#';
+                kwBtn.classList.add('export-btn-disabled');
+                kwHint.style.display = '';
+            }
+
+            if (contactScan.status === 'completed') {
+                contactsBtn.onclick = (e) => { e.preventDefault(); downloadContacts(); };
+                contactsBtn.classList.remove('export-btn-disabled');
+                contactsHint.style.display = 'none';
+            } else {
+                contactsBtn.onclick = null;
+                contactsBtn.classList.add('export-btn-disabled');
+                contactsHint.style.display = '';
+            }
+        }
+
+        async function refreshTabStates() {
+            try {
+                const [sessionsResp, stopWordsResp, scanStatusResp, projectResp, contactScanResp, kwGroupsResp] =
+                    await Promise.all([
+                        fetch(`/api/projects/${PROJECT_ID}/sessions`),
+                        fetch(`/api/projects/${PROJECT_ID}/stop-words`),
+                        fetch(`/api/projects/${PROJECT_ID}/keyword-scan/status`),
+                        fetch(`/api/projects/${PROJECT_ID}/details`),
+                        fetch(`/api/projects/${PROJECT_ID}/contact-scan/latest/status`),
+                        fetch(`/api/projects/${PROJECT_ID}/keyword-groups`),
+                    ]);
+
+                if (!sessionsResp.ok || !stopWordsResp.ok || !scanStatusResp.ok ||
+                    !projectResp.ok || !contactScanResp.ok || !kwGroupsResp.ok) {
+                    console.error('refreshTabStates: one or more API calls failed');
+                    return;
+                }
+
+                const sessions    = await sessionsResp.json();
+                const stopWords   = await stopWordsResp.json();
+                const scanStatus  = await scanStatusResp.json();
+                const project     = await projectResp.json();
+                const contactScan = await contactScanResp.json();
+                const kwGroups    = await kwGroupsResp.json();
+
+                // Tab 1 — Upload
+                const hasCompleted  = sessions.some(s => s.status === 'completed');
+                const hasAnySession = sessions.length > 0;
+                setTabState('upload', hasCompleted ? 'green' : hasAnySession ? 'yellow' : '');
+
+                // Tab 2 — Stop Words
+                setTabState('stopwords', stopWords.length > 0 ? 'yellow' : '');
+
+                // Tab 3 — Keywords
+                const hasKeywords = kwGroups.some(g => g.keywords && g.keywords.length > 0);
+                setTabState('keywords', scanStatus.has_result ? 'green' : hasKeywords ? 'yellow' : '');
+
+                // Tab 4 — Roles
+                const hasRoles          = (project.target_roles || []).length > 0;
+                const contactScanDone   = contactScan.status === 'completed';
+                setTabState('roles', contactScanDone ? 'green' : hasRoles ? 'yellow' : '');
+
+                // Update Export tab download buttons
+                updateExportButtons(sessions, scanStatus, contactScan);
+            } catch (err) {
+                console.error('refreshTabStates error:', err);
+            }
+        }
+
         // Load on page load
         loadRoles();
         loadContactScanSettings();
@@ -972,12 +1157,10 @@
                     startContactScanPolling();
                 } else {
                     pollContactScan();
-                    if (data.status === "completed") {
-                        document.getElementById("dl-contacts-btn").style.display = "inline-block";
-                    }
                 }
             })
             .catch(() => {});
+        refreshTabStates();
     </script>
 </body>
 </html>
