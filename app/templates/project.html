@@ -284,7 +284,7 @@
                     </div>
                     <div id="keyword-groups-container"></div>
                     <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
-                        Scan Postings &amp; Download XLSX
+                        Run Keyword Scan
                     </button>
                 </article>
 
@@ -778,7 +778,6 @@
             btn.setAttribute("aria-busy", "true");
             btn.disabled = true;
             try {
-                // Start the scan as a background job
                 const startResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/start`, {method: "POST"});
                 if (!startResp.ok) {
                     const err = await startResp.json().catch(() => ({}));
@@ -787,7 +786,6 @@
                 }
                 const {job_id} = await startResp.json();
 
-                // Poll until done
                 while (true) {
                     await new Promise(r => setTimeout(r, 2000));
                     const statusResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/${job_id}/status`);
@@ -803,22 +801,8 @@
                     }
                 }
 
-                // Download the result
-                const dlResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/${job_id}/download`);
-                if (!dlResp.ok) {
-                    const err = await dlResp.json().catch(() => ({}));
-                    alert(err.detail || "Download failed");
-                    return;
-                }
-                const blob = await dlResp.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "keyword_analysis.xlsx";
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
+                // Scan complete — update tab states and Export tab buttons
+                refreshTabStates();
             } catch (err) {
                 alert("Scan failed: " + err.message);
             } finally {
