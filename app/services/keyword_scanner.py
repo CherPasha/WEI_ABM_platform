@@ -1,10 +1,13 @@
 import io
 import re
 import logging
+import time
 
 import pandas as pd
 
 from app.database import supabase
+
+_MAX_SENTENCES_PER_KW = 5  # cap stored sentences to bound memory and DataFrame size
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +180,10 @@ def scan_project_keywords(project_id: str) -> dict:
 
     result_companies = []
     for batch_start in range(0, len(unique_companies), _COMPANY_BATCH):
+        # Yield GIL between batches so the asyncio event loop can process
+        # status-poll requests and avoid proxy 504 timeouts.
+        time.sleep(0)
+
         batch = unique_companies[batch_start:batch_start + _COMPANY_BATCH]
         batch_cids = [cid for uc in batch for cid in uc["company_ids"]]
 
@@ -242,7 +249,7 @@ def scan_project_keywords(project_id: str) -> dict:
                                 "sentence": sentence,
                             })
 
-                keyword_results[kw] = {"count": len(matches), "sentences": matches}
+                keyword_results[kw] = {"count": len(matches), "sentences": matches[:_MAX_SENTENCES_PER_KW]}
 
             hit_count, hit_groups = _compute_company_hits(groups, keyword_results)
             for cid in uc["company_ids"]:
