@@ -796,6 +796,9 @@
                 while (true) {
                     await new Promise(r => setTimeout(r, 2000));
                     const statusResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/${job_id}/status`);
+                    if (!statusResp.ok) {
+                        throw new Error(`Server error ${statusResp.status} while checking scan status — the scan may have caused the server to run out of memory`);
+                    }
                     const status = await statusResp.json();
                     if (status.status === "done") break;
                     if (status.status === "error") {

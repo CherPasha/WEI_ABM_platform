@@ -171,89 +171,94 @@ def scan_project_keywords(project_id: str) -> dict:
 
     unique_companies = list(dedup.values())
 
-    # 5. Fetch all postings and news for all company_ids
-    all_company_ids = [cid for uc in unique_companies for cid in uc["company_ids"]]
+    # 5. Process companies in batches — fetch postings/news per batch so peak
+    #    memory stays bounded regardless of project size.
+    _COMPANY_BATCH = 50
 
-    all_postings = _fetch_all_in(
-        "postings", "company_id", all_company_ids,
-        select="company_id, title, snippet_requirement, snippet_responsibility"
-    )
-    postings_by_company: dict[str, list] = {}
-    for p in all_postings:
-        postings_by_company.setdefault(p["company_id"], []).append(p)
-
-    all_news = _fetch_all_in(
-        "news_articles", "company_id", all_company_ids,
-        select="company_id, title, snippet, full_text"
-    )
-    news_by_company: dict[str, list] = {}
-    for a in all_news:
-        news_by_company.setdefault(a["company_id"], []).append(a)
-
-    # 6. For each company x keyword, search postings and news
     result_companies = []
-    for uc in unique_companies:
-        company_postings = []
-        company_news = []
-        for cid in uc["company_ids"]:
-            company_postings.extend(postings_by_company.get(cid, []))
-            company_news.extend(news_by_company.get(cid, []))
+    for batch_start in range(0, len(unique_companies), _COMPANY_BATCH):
+        batch = unique_companies[batch_start:batch_start + _COMPANY_BATCH]
+        batch_cids = [cid for uc in batch for cid in uc["company_ids"]]
 
-        # Pre-filter publications that contain a stop word (do this once, not per keyword)
-        if stop_patterns:
-            company_postings = [p for p in company_postings if not _is_stopped(p, POSTING_TEXT_FIELDS)]
-            company_news = [a for a in company_news if not _is_stopped(a, NEWS_TEXT_FIELDS)]
+        batch_postings = _fetch_all_in(
+            "postings", "company_id", batch_cids,
+            select="company_id, title, snippet_requirement, snippet_responsibility"
+        )
+        postings_by_company: dict[str, list] = {}
+        for p in batch_postings:
+            postings_by_company.setdefault(p["company_id"], []).append(p)
 
-        keyword_results = {}
-        for kw, _group_name in all_keywords:
-            pattern = keyword_patterns[kw]
-            matches = []
+        batch_news = _fetch_all_in(
+            "news_articles", "company_id", batch_cids,
+            select="company_id, title, snippet, full_text"
+        )
+        news_by_company: dict[str, list] = {}
+        for a in batch_news:
+            news_by_company.setdefault(a["company_id"], []).append(a)
 
-            for posting in company_postings:
-                for field in POSTING_TEXT_FIELDS:
-                    raw_text = posting.get(field) or ""
-                    if not raw_text:
-                        continue
-                    clean_text = _strip_html(raw_text)
-                    for sentence in _extract_sentences(clean_text, pattern):
-                        matches.append({
-                            "source": "posting",
-                            "field": field,
-                            "title": posting.get("title") or "",
-                            "sentence": sentence,
-                        })
+        # 6. For each company x keyword, search postings and news
+        for uc in batch:
+            company_postings = []
+            company_news = []
+            for cid in uc["company_ids"]:
+                company_postings.extend(postings_by_company.get(cid, []))
+                company_news.extend(news_by_company.get(cid, []))
 
-            for article in company_news:
-                for field in NEWS_TEXT_FIELDS:
-                    raw_text = article.get(field) or ""
-                    if not raw_text:
-                        continue
-                    clean_text = _strip_html(raw_text)
-                    for sentence in _extract_sentences(clean_text, pattern):
-                        matches.append({
-                            "source": "news",
-                            "field": field,
-                            "title": article.get("title") or "",
-                            "sentence": sentence,
-                        })
+            # Pre-filter publications that contain a stop word (do this once, not per keyword)
+            if stop_patterns:
+                company_postings = [p for p in company_postings if not _is_stopped(p, POSTING_TEXT_FIELDS)]
+                company_news = [a for a in company_news if not _is_stopped(a, NEWS_TEXT_FIELDS)]
 
-            keyword_results[kw] = {"count": len(matches), "sentences": matches}
+            keyword_results = {}
+            for kw, _group_name in all_keywords:
+                pattern = keyword_patterns[kw]
+                matches = []
 
-        hit_count, hit_groups = _compute_company_hits(groups, keyword_results)
-        for cid in uc["company_ids"]:
-            try:
-                supabase.table("companies").update({
-                    "keyword_hit_count": hit_count,
-                    "keyword_group_count": hit_groups,
-                }).eq("id", cid).execute()
-            except Exception as e:
-                logger.warning("Failed to update keyword hits for company %s: %s", cid, e)
+                for posting in company_postings:
+                    for field in POSTING_TEXT_FIELDS:
+                        raw_text = posting.get(field) or ""
+                        if not raw_text:
+                            continue
+                        clean_text = _strip_html(raw_text)
+                        for sentence in _extract_sentences(clean_text, pattern):
+                            matches.append({
+                                "source": "posting",
+                                "field": field,
+                                "title": posting.get("title") or "",
+                                "sentence": sentence,
+                            })
 
-        result_companies.append({
-            "name": uc["name"],
-            "inn": uc["inn"],
-            "results": keyword_results,
-        })
+                for article in company_news:
+                    for field in NEWS_TEXT_FIELDS:
+                        raw_text = article.get(field) or ""
+                        if not raw_text:
+                            continue
+                        clean_text = _strip_html(raw_text)
+                        for sentence in _extract_sentences(clean_text, pattern):
+                            matches.append({
+                                "source": "news",
+                                "field": field,
+                                "title": article.get("title") or "",
+                                "sentence": sentence,
+                            })
+
+                keyword_results[kw] = {"count": len(matches), "sentences": matches}
+
+            hit_count, hit_groups = _compute_company_hits(groups, keyword_results)
+            for cid in uc["company_ids"]:
+                try:
+                    supabase.table("companies").update({
+                        "keyword_hit_count": hit_count,
+                        "keyword_group_count": hit_groups,
+                    }).eq("id", cid).execute()
+                except Exception as e:
+                    logger.warning("Failed to update keyword hits for company %s: %s", cid, e)
+
+            result_companies.append({
+                "name": uc["name"],
+                "inn": uc["inn"],
+                "results": keyword_results,
+            })
 
     return {"groups": groups, "companies": result_companies}
 
