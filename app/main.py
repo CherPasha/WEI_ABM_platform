@@ -798,7 +798,7 @@ async def import_stop_words(project_id: str, file: UploadFile = File(...)):
 
 # In-memory job store: job_id -> {status, result, error, ts}
 _scan_jobs: dict[str, dict] = {}
-_SCAN_JOB_TTL = 600  # seconds before an unclaimed job is discarded
+_SCAN_JOB_TTL = 7200  # seconds before an unclaimed job is discarded (120 min)
 
 
 def _run_scan_task(job_id: str, project_id: str) -> None:
