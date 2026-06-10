@@ -60,7 +60,6 @@ def find_contacts_for_domain(website_url: str) -> list[dict]:
 
     params = {
         "domain": domain,
-        "type": "personal",
         "api_key": settings.HUNTER_API_KEY,
     }
 

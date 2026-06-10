@@ -40,7 +40,7 @@ async def _log_config():
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-_KEEP_STATUSES = {"valid", "accept_all"}
+_KEEP_STATUSES = {"valid", "accept_all", "risky"}
 
 
 # ──────────────────────── HTML Pages ────────────────────────
