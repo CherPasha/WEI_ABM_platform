@@ -176,7 +176,7 @@ def scan_project_keywords(project_id: str) -> dict:
 
     # 5. Process companies in batches — fetch postings/news per batch so peak
     #    memory stays bounded regardless of project size.
-    _COMPANY_BATCH = 50
+    _COMPANY_BATCH = 1
 
     result_companies = []
     for batch_start in range(0, len(unique_companies), _COMPANY_BATCH):
@@ -205,6 +205,7 @@ def scan_project_keywords(project_id: str) -> dict:
 
         # 6. For each company x keyword, search postings and news
         for uc in batch:
+            time.sleep(0)  # yield GIL once per company so the event loop can serve status polls
             company_postings = []
             company_news = []
             for cid in uc["company_ids"]:
