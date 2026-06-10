@@ -42,12 +42,12 @@ def _get_existing_emails(company_id: str) -> set[str]:
     emails: set[str] = set()
     offset = 0
     while True:
-        rows = (
-            supabase.table("contacts")
+        rows = _supabase_call_with_retry(
+            lambda off=offset: supabase.table("contacts")
             .select("email")
             .eq("company_id", company_id)
             .not_.is_("email", "null")
-            .range(offset, offset + 999)
+            .range(off, off + 999)
             .execute()
         ).data
         for r in rows:
@@ -64,11 +64,11 @@ def _get_existing_names(company_id: str) -> set[tuple[str, str]]:
     names: set[tuple[str, str]] = set()
     offset = 0
     while True:
-        rows = (
-            supabase.table("contacts")
+        rows = _supabase_call_with_retry(
+            lambda off=offset: supabase.table("contacts")
             .select("first_name, last_name")
             .eq("company_id", company_id)
-            .range(offset, offset + 999)
+            .range(off, off + 999)
             .execute()
         ).data
         for r in rows:
@@ -84,8 +84,8 @@ def _get_existing_names(company_id: str) -> set[tuple[str, str]]:
 
 def _fetch_companies(project_id: str, keyword_only: bool) -> list[dict]:
     """Fetch all companies across all sessions for a project."""
-    sessions = (
-        supabase.table("sessions")
+    sessions = _supabase_call_with_retry(
+        lambda: supabase.table("sessions")
         .select("id")
         .eq("project_id", project_id)
         .execute()
@@ -101,14 +101,14 @@ def _fetch_companies(project_id: str, keyword_only: bool) -> list[dict]:
         batch = session_ids[i:i + batch_size]
         offset = 0
         while True:
-            query = (
-                supabase.table("companies")
-                .select("id, legal_name, known_names, website_url, keyword_hit_count")
-                .in_("session_id", batch)
-            )
-            if keyword_only:
-                query = query.gt("keyword_hit_count", 0)
-            rows = query.range(offset, offset + 999).execute().data
+            def _query_companies(b=batch, off=offset, kw=keyword_only):
+                q = (supabase.table("companies")
+                     .select("id, legal_name, known_names, website_url, keyword_hit_count")
+                     .in_("session_id", b))
+                if kw:
+                    q = q.gt("keyword_hit_count", 0)
+                return q.range(off, off + 999).execute()
+            rows = _supabase_call_with_retry(_query_companies).data
             all_companies.extend(rows)
             if len(rows) < 1000:
                 break
@@ -120,7 +120,9 @@ def _fetch_companies(project_id: str, keyword_only: bool) -> list[dict]:
 def run_contact_scan(scan_id: str) -> None:
     """Run a per-project contact scan. Called as a FastAPI BackgroundTask."""
     try:
-        scan_result = supabase.table("contact_scans").select("*").eq("id", scan_id).execute()
+        scan_result = _supabase_call_with_retry(
+            lambda: supabase.table("contact_scans").select("*").eq("id", scan_id).execute()
+        )
         if not scan_result.data:
             logger.error("Contact scan %s not found", scan_id)
             return
@@ -129,8 +131,8 @@ def run_contact_scan(scan_id: str) -> None:
         use_roles: bool = scan["use_roles"]
         keyword_only: bool = scan["keyword_only"]
 
-        project_result = (
-            supabase.table("projects").select("target_roles").eq("id", project_id).execute()
+        project_result = _supabase_call_with_retry(
+            lambda: supabase.table("projects").select("target_roles").eq("id", project_id).execute()
         )
         target_roles: list[str] = (
             project_result.data[0].get("target_roles") or []
@@ -239,12 +241,12 @@ def run_contact_scan(scan_id: str) -> None:
         contacts_to_verify = []
         _offset = 0
         while True:
-            page = (
-                supabase.table("contacts")
+            page = _supabase_call_with_retry(
+                lambda off=_offset: supabase.table("contacts")
                 .select("id, email")
                 .eq("contact_scan_id", scan_id)
                 .not_.is_("email", "null")
-                .range(_offset, _offset + 999)
+                .range(off, off + 999)
                 .execute()
             ).data
             contacts_to_verify.extend(page)
