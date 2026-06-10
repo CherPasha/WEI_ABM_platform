@@ -237,47 +237,51 @@ def run_contact_scan(scan_id: str) -> None:
 
                 _update_scan(scan_id, enrichment_done=i + 1)
 
-        # ── Phase 2: Email verification ──
-        contacts_to_verify = []
-        _offset = 0
-        while True:
-            page = _supabase_call_with_retry(
-                lambda off=_offset: supabase.table("contacts")
-                .select("id, email")
-                .eq("contact_scan_id", scan_id)
-                .not_.is_("email", "null")
-                .range(off, off + 999)
-                .execute()
-            ).data
-            contacts_to_verify.extend(page)
-            if len(page) < 1000:
-                break
-            _offset += 1000
+        # ── Phase 2: Email verification (disabled) ──
+        # To re-enable, remove the early update+return and uncomment the block below.
+        _update_scan(scan_id, contacts_added=contacts_added, status="completed")
 
-        total_verification = len(contacts_to_verify)
-        _update_scan(
-            scan_id,
-            total_verification=total_verification,
-            contacts_added=contacts_added,
-        )
-
-        for i, contact in enumerate(contacts_to_verify):
-            try:
-                result = verify_email(contact["email"])
-                if result is not None:
-                    _supabase_call_with_retry(
-                        lambda cid=contact["id"], r=result: supabase.table("contacts").update(r).eq("id", cid).execute()
-                    )
-            except Exception as e:
-                logger.error(
-                    "Verification failed for contact %s ('%s'): %s",
-                    contact["id"], contact["email"], e,
-                )
-
-            time.sleep(0.2)  # Hunter.io rate limit: 300 req/min
-            _update_scan(scan_id, verification_done=i + 1)
-
-        _update_scan(scan_id, status="completed")
+        # contacts_to_verify = []
+        # _offset = 0
+        # while True:
+        #     page = _supabase_call_with_retry(
+        #         lambda off=_offset: supabase.table("contacts")
+        #         .select("id, email")
+        #         .eq("contact_scan_id", scan_id)
+        #         .not_.is_("email", "null")
+        #         .neq("email", "")
+        #         .range(off, off + 999)
+        #         .execute()
+        #     ).data
+        #     contacts_to_verify.extend(page)
+        #     if len(page) < 1000:
+        #         break
+        #     _offset += 1000
+        #
+        # total_verification = len(contacts_to_verify)
+        # _update_scan(
+        #     scan_id,
+        #     total_verification=total_verification,
+        #     contacts_added=contacts_added,
+        # )
+        #
+        # for i, contact in enumerate(contacts_to_verify):
+        #     try:
+        #         result = verify_email(contact["email"])
+        #         if result is not None:
+        #             _supabase_call_with_retry(
+        #                 lambda cid=contact["id"], r=result: supabase.table("contacts").update(r).eq("id", cid).execute()
+        #             )
+        #     except Exception as e:
+        #         logger.error(
+        #             "Verification failed for contact %s ('%s'): %s",
+        #             contact["id"], contact["email"], e,
+        #         )
+        #
+        #     time.sleep(0.2)  # Hunter.io rate limit: 300 req/min
+        #     _update_scan(scan_id, verification_done=i + 1)
+        #
+        # _update_scan(scan_id, status="completed")
         logger.info("Contact scan %s completed, %d contacts added", scan_id, contacts_added)
 
     except Exception as e:
