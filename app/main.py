@@ -1,8 +1,9 @@
 import base64
 import io
 import logging
-import time
 import uuid
+import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -796,41 +797,177 @@ async def import_stop_words(project_id: str, file: UploadFile = File(...)):
 
 # ──────────────────────── Keyword Scan ────────────────────────
 
-# In-memory job store: job_id -> {status, result, error, ts}
-_scan_jobs: dict[str, dict] = {}
-_SCAN_JOB_TTL = 7200  # seconds before an unclaimed job is discarded (120 min)
+def _upsert_keyword_scan(project_id: str, fields: dict) -> None:
+    """Insert or update the keyword_scans row for this project."""
+    existing = (
+        supabase.table("keyword_scans")
+        .select("id")
+        .eq("project_id", project_id)
+        .execute()
+    )
+    if existing.data:
+        supabase.table("keyword_scans").update(fields).eq("project_id", project_id).execute()
+    else:
+        supabase.table("keyword_scans").insert({"project_id": project_id, **fields}).execute()
 
 
-def _run_scan_task(job_id: str, project_id: str) -> None:
+def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
+    """
+    On a resume run, new_scan_result only contains companies processed in this run.
+    Load the previously-stored XLSX, reconstruct the old companies, and merge.
+    Returns a complete scan_result with all companies.
+    """
+    _logger = logging.getLogger(__name__)
     try:
-        scan_result = scan_project_keywords(project_id)
+        row = (
+            supabase.table("projects")
+            .select("keyword_scan_result")
+            .eq("id", project_id)
+            .execute()
+        )
+        if not row.data or not row.data[0].get("keyword_scan_result"):
+            return new_scan_result  # no previous result; return as-is
+
+        xlsx_bytes = base64.b64decode(row.data[0]["keyword_scan_result"])
+        xf = pd.ExcelFile(io.BytesIO(xlsx_bytes))
+        if "Summary" not in xf.sheet_names:
+            return new_scan_result
+
+        summary_df = xf.parse("Summary")
+        details_df = xf.parse("Details") if "Details" in xf.sheet_names else pd.DataFrame()
+
+        groups = new_scan_result["groups"]
+        new_inns = {c["inn"] for c in new_scan_result["companies"]}
+
+        # Reconstruct old companies from Summary sheet
+        old_companies = []
+        kw_cols = [
+            c for c in summary_df.columns
+            if c not in ("Company", "INN") and not str(c).endswith(" (total)")
+        ]
+        for _, row_s in summary_df.iterrows():
+            inn = str(row_s.get("INN", "") or "")
+            if inn in new_inns:
+                continue  # already in new results; skip
+            results = {}
+            for kw in kw_cols:
+                count = int(row_s.get(kw, 0) or 0)
+                # Reconstruct sentences from Details sheet
+                sentences = []
+                if not details_df.empty and "Keyword" in details_df.columns:
+                    detail_rows = details_df[
+                        (details_df["INN"].astype(str) == inn) &
+                        (details_df["Keyword"].astype(str) == str(kw))
+                    ]
+                    if not detail_rows.empty:
+                        raw = str(detail_rows.iloc[0].get("Sentences", "") or "")
+                        for part in raw.split("\n\n"):
+                            part = part.strip()
+                            if part:
+                                sentences.append({"source": "unknown", "field": "", "title": "", "sentence": part})
+                results[str(kw)] = {"count": count, "sentences": sentences}
+            old_companies.append({
+                "name": str(row_s.get("Company", "") or ""),
+                "inn": inn,
+                "results": results,
+            })
+
+        merged_companies = old_companies + new_scan_result["companies"]
+        return {"groups": groups, "companies": merged_companies}
+
+    except Exception:
+        _logger.exception("Failed to merge resume results for project %s; using partial results", project_id)
+        return new_scan_result
+
+
+def _run_scan_task(project_id: str, started_at: datetime | None = None) -> None:
+    _logger = logging.getLogger(__name__)
+    now = datetime.now(timezone.utc)
+    is_resume = started_at is not None
+
+    if not is_resume:
+        started_at = now
+        _upsert_keyword_scan(project_id, {
+            "status": "running",
+            "started_at": started_at.isoformat(),
+            "updated_at": now.isoformat(),
+            "companies_done": 0,
+            "companies_total": 0,
+            "error": None,
+        })
+    else:
+        _upsert_keyword_scan(project_id, {
+            "status": "running",
+            "updated_at": now.isoformat(),
+        })
+
+    def _on_total_known(total: int) -> None:
+        try:
+            _upsert_keyword_scan(project_id, {
+                "companies_total": total,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            _logger.warning("Failed to update companies_total for project %s", project_id)
+
+    def _on_company_done(done: int) -> None:
+        try:
+            _upsert_keyword_scan(project_id, {
+                "companies_done": done,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            _logger.warning("Failed to update companies_done for project %s", project_id)
+
+    try:
+        scan_result = scan_project_keywords(
+            project_id,
+            started_at,
+            _on_total_known,
+            _on_company_done,
+        )
+        # On resume, scan_result only has newly-processed companies.
+        # Merge with previous XLSX to produce a complete result.
+        if is_resume:
+            scan_result = _merge_resume_results(project_id, scan_result)
+
         buffer = generate_keyword_xlsx(scan_result)
         data = buffer.getvalue()
-        # Persist to DB so Export tab can fetch it later
         try:
             encoded = base64.b64encode(data).decode()
             supabase.table("projects").update(
                 {"keyword_scan_result": encoded}
             ).eq("id", project_id).execute()
         except Exception:
-            logging.getLogger(__name__).exception(
+            _logger.exception(
                 "Failed to persist keyword scan to DB for project %s", project_id
             )
-            # Continue — in-memory job still usable; Export tab won't work until next success
-        _scan_jobs[job_id] = {"status": "done", "result": data, "error": None, "ts": time.time()}
+        _upsert_keyword_scan(project_id, {
+            "status": "done",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
     except ValueError as e:
-        _scan_jobs[job_id] = {"status": "error", "result": None, "error": str(e), "ts": time.time()}
-    except Exception as e:
-        logging.getLogger(__name__).exception("Keyword scan failed for project %s", project_id)
-        _scan_jobs[job_id] = {"status": "error", "result": None, "error": "Scan failed unexpectedly", "ts": time.time()}
+        _upsert_keyword_scan(project_id, {
+            "status": "error",
+            "error": str(e),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception:
+        _logger.exception("Keyword scan failed for project %s", project_id)
+        try:
+            _upsert_keyword_scan(project_id, {
+                "status": "error",
+                "error": "Scan failed unexpectedly",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            _logger.exception("Failed to write error status for project %s", project_id)
 
 
 @app.post("/api/projects/{project_id}/keyword-scan/start")
 async def keyword_scan_start(project_id: str, background_tasks: BackgroundTasks):
-    job_id = str(uuid.uuid4())
-    _scan_jobs[job_id] = {"status": "running", "result": None, "error": None, "ts": time.time()}
-    background_tasks.add_task(_run_scan_task, job_id, project_id)
-    return {"job_id": job_id}
+    background_tasks.add_task(_run_scan_task, project_id)
+    return {"status": "started"}
 
 
 @app.get("/api/projects/{project_id}/keyword-scan/status")
@@ -1003,30 +1140,22 @@ async def keyword_scan_download_with_contacts(project_id: str):
     )
 
 
-@app.get("/api/projects/{project_id}/keyword-scan/{job_id}/status")
-async def keyword_scan_job_status(project_id: str, job_id: str):
-    now = time.time()
-    stale = [jid for jid, j in list(_scan_jobs.items()) if now - j["ts"] > _SCAN_JOB_TTL]
-    for jid in stale:
-        _scan_jobs.pop(jid, None)
-
-    job = _scan_jobs.get(job_id)
-    if not job:
-        return {"status": "not_found"}
-    return {"status": job["status"], "error": job.get("error")}
-
-
-@app.get("/api/projects/{project_id}/keyword-scan/{job_id}/download")
-async def keyword_scan_job_download(project_id: str, job_id: str):
-    job = _scan_jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found or expired")
-    if job["status"] != "done":
-        raise HTTPException(status_code=409, detail=f"Job not ready: {job['status']}")
-    data = job.pop("result")
-    _scan_jobs.pop(job_id, None)
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=keyword_analysis_{project_id[:8]}.xlsx"},
+@app.get("/api/projects/{project_id}/keyword-scan/job-status")
+async def keyword_scan_job_status(project_id: str):
+    """Returns current keyword scan status from the DB."""
+    result = (
+        supabase.table("keyword_scans")
+        .select("status, companies_done, companies_total, error, updated_at")
+        .eq("project_id", project_id)
+        .execute()
     )
+    if not result.data:
+        return {"status": "not_found"}
+    row = result.data[0]
+    return {
+        "status": row.get("status", "not_found"),
+        "companies_done": row.get("companies_done", 0),
+        "companies_total": row.get("companies_total", 0),
+        "error": row.get("error"),
+        "updated_at": row.get("updated_at"),
+    }
