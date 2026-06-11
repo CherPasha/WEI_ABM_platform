@@ -39,6 +39,29 @@ async def _log_config():
         _mask(settings.yandex_folder_id),
     )
 
+
+@app.on_event("startup")
+async def recover_keyword_scans() -> None:
+    """Re-enqueue any scan that was running when the server last stopped."""
+    try:
+        result = (
+            supabase.table("keyword_scans")
+            .select("project_id, started_at")
+            .eq("status", "running")
+            .execute()
+        )
+        loop = asyncio.get_event_loop()
+        for row in (result.data or []):
+            started_at = datetime.fromisoformat(row["started_at"])
+            loop.run_in_executor(None, _run_scan_task, row["project_id"], started_at)
+            logging.getLogger(__name__).info(
+                "Recovering interrupted keyword scan for project %s", row["project_id"]
+            )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to recover interrupted keyword scans on startup"
+        )
+
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 _KEEP_STATUSES = {"valid", "accept_all", "risky"}
