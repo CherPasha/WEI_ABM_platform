@@ -822,10 +822,16 @@ async def import_stop_words(project_id: str, file: UploadFile = File(...)):
 
 def _upsert_keyword_scan(project_id: str, fields: dict) -> None:
     """Insert or update the keyword_scans row for this project."""
-    supabase.table("keyword_scans").upsert(
-        {"project_id": project_id, **fields},
-        on_conflict="project_id",
-    ).execute()
+    existing = (
+        supabase.table("keyword_scans")
+        .select("id")
+        .eq("project_id", project_id)
+        .execute()
+    )
+    if existing.data:
+        supabase.table("keyword_scans").update(fields).eq("project_id", project_id).execute()
+    else:
+        supabase.table("keyword_scans").insert({"project_id": project_id, **fields}).execute()
 
 
 def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
