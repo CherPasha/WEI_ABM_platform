@@ -112,7 +112,12 @@ def _compute_company_hits(groups: list[dict], keyword_results: dict) -> tuple[in
     return hit_count, hit_groups
 
 
-def scan_project_keywords(project_id: str) -> dict:
+def scan_project_keywords(
+    project_id: str,
+    scan_started_at: datetime,
+    on_total_known: Callable[[int], None],
+    on_company_done: Callable[[int], None],
+) -> dict:
     """Scan all postings in a project for keyword matches.
 
     Returns:
@@ -198,17 +203,37 @@ def scan_project_keywords(project_id: str) -> dict:
 
     unique_companies = list(dedup.values())
 
+    # 4b. Fetch keyword_scanned_at for all company IDs (one batch query for resume detection)
+    all_cids_for_checkpoint = [cid for uc in unique_companies for cid in uc["company_ids"]]
+    if all_cids_for_checkpoint:
+        checkpoint_rows = _fetch_all_in(
+            "companies", "id", all_cids_for_checkpoint,
+            select="id, keyword_scanned_at"
+        )
+        scanned_map = {r["id"]: r.get("keyword_scanned_at") for r in checkpoint_rows}
+    else:
+        scanned_map = {}
+
+    companies_total_unique = len(unique_companies)
+    unprocessed = [
+        uc for uc in unique_companies
+        if not _is_checkpointed(uc["company_ids"], scan_started_at, scanned_map)
+    ]
+    already_done = companies_total_unique - len(unprocessed)
+    on_total_known(companies_total_unique)
+
     # 5. Process companies in batches — fetch postings/news per batch so peak
     #    memory stays bounded regardless of project size.
     _COMPANY_BATCH = 1
 
     result_companies = []
-    for batch_start in range(0, len(unique_companies), _COMPANY_BATCH):
+    done_count = already_done
+    for batch_start in range(0, len(unprocessed), _COMPANY_BATCH):
         # Yield GIL between batches so the asyncio event loop can process
         # status-poll requests and avoid proxy 504 timeouts.
         time.sleep(0)
 
-        batch = unique_companies[batch_start:batch_start + _COMPANY_BATCH]
+        batch = unprocessed[batch_start:batch_start + _COMPANY_BATCH]
         batch_cids = [cid for uc in batch for cid in uc["company_ids"]]
 
         batch_postings = _fetch_all_in(
@@ -282,6 +307,7 @@ def scan_project_keywords(project_id: str) -> dict:
                     supabase.table("companies").update({
                         "keyword_hit_count": hit_count,
                         "keyword_group_count": hit_groups,
+                        "keyword_scanned_at": datetime.now(timezone.utc).isoformat(),
                     }).eq("id", cid).execute()
                 except Exception as e:
                     logger.warning("Failed to update keyword hits for company %s: %s", cid, e)
@@ -291,6 +317,8 @@ def scan_project_keywords(project_id: str) -> dict:
                 "inn": uc["inn"],
                 "results": keyword_results,
             })
+            done_count += 1
+            on_company_done(done_count)
 
     return {"groups": groups, "companies": result_companies}
 
