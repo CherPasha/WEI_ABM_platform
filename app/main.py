@@ -799,16 +799,10 @@ async def import_stop_words(project_id: str, file: UploadFile = File(...)):
 
 def _upsert_keyword_scan(project_id: str, fields: dict) -> None:
     """Insert or update the keyword_scans row for this project."""
-    existing = (
-        supabase.table("keyword_scans")
-        .select("id")
-        .eq("project_id", project_id)
-        .execute()
-    )
-    if existing.data:
-        supabase.table("keyword_scans").update(fields).eq("project_id", project_id).execute()
-    else:
-        supabase.table("keyword_scans").insert({"project_id": project_id, **fields}).execute()
+    supabase.table("keyword_scans").upsert(
+        {"project_id": project_id, **fields},
+        on_conflict="project_id",
+    ).execute()
 
 
 def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
@@ -837,7 +831,15 @@ def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
         details_df = xf.parse("Details") if "Details" in xf.sheet_names else pd.DataFrame()
 
         groups = new_scan_result["groups"]
-        new_inns = {c["inn"] for c in new_scan_result["companies"]}
+
+        def _dedup_key(inn: str, name: str) -> str:
+            inn = (inn or "").strip()
+            return f"inn:{inn}" if inn else f"name:{(name or '').strip().lower()}"
+
+        new_keys = {
+            _dedup_key(c["inn"], c["name"])
+            for c in new_scan_result["companies"]
+        }
 
         # Reconstruct old companies from Summary sheet
         old_companies = []
@@ -847,7 +849,8 @@ def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
         ]
         for _, row_s in summary_df.iterrows():
             inn = str(row_s.get("INN", "") or "")
-            if inn in new_inns:
+            company_name = str(row_s.get("Company", "") or "")
+            if _dedup_key(inn, company_name) in new_keys:
                 continue  # already in new results; skip
             results = {}
             for kw in kw_cols:
@@ -885,21 +888,28 @@ def _run_scan_task(project_id: str, started_at: datetime | None = None) -> None:
     now = datetime.now(timezone.utc)
     is_resume = started_at is not None
 
-    if not is_resume:
-        started_at = now
-        _upsert_keyword_scan(project_id, {
-            "status": "running",
-            "started_at": started_at.isoformat(),
-            "updated_at": now.isoformat(),
-            "companies_done": 0,
-            "companies_total": 0,
-            "error": None,
-        })
-    else:
-        _upsert_keyword_scan(project_id, {
-            "status": "running",
-            "updated_at": now.isoformat(),
-        })
+    try:
+        if not is_resume:
+            started_at = now
+            _upsert_keyword_scan(project_id, {
+                "status": "running",
+                "started_at": started_at.isoformat(),
+                "updated_at": now.isoformat(),
+                "companies_done": 0,
+                "companies_total": 0,
+                "error": None,
+            })
+        else:
+            _upsert_keyword_scan(project_id, {
+                "status": "running",
+                "updated_at": now.isoformat(),
+            })
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to write initial running status for project %s; proceeding anyway", project_id
+        )
+        if not is_resume:
+            started_at = now
 
     def _on_total_known(total: int) -> None:
         try:
