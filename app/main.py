@@ -976,22 +976,43 @@ def _run_scan_task(project_id: str, started_at: datetime | None = None) -> None:
 
 @app.post("/api/projects/{project_id}/keyword-scan/start")
 async def keyword_scan_start(project_id: str, background_tasks: BackgroundTasks):
+    result = (
+        supabase.table("keyword_scans")
+        .select("status")
+        .eq("project_id", project_id)
+        .execute()
+    )
+    if result.data and result.data[0].get("status") == "running":
+        raise HTTPException(status_code=409, detail="Scan already running")
     background_tasks.add_task(_run_scan_task, project_id)
-    return {"status": "started"}
+    return {}
 
 
 @app.get("/api/projects/{project_id}/keyword-scan/status")
 async def keyword_scan_db_status(project_id: str):
-    """Returns whether a saved keyword scan result exists in the DB."""
+    """Returns current keyword scan state from keyword_scans table."""
     result = (
-        supabase.table("projects")
-        .select("keyword_scan_result")
-        .eq("id", project_id)
+        supabase.table("keyword_scans")
+        .select("status, started_at, companies_done, companies_total, error")
+        .eq("project_id", project_id)
         .execute()
     )
     if not result.data:
-        return {"has_result": False}
-    return {"has_result": result.data[0].get("keyword_scan_result") is not None}
+        return {
+            "status": "none",
+            "started_at": None,
+            "companies_done": 0,
+            "companies_total": 0,
+            "error": None,
+        }
+    row = result.data[0]
+    return {
+        "status": row["status"],
+        "started_at": row.get("started_at"),
+        "companies_done": row.get("companies_done", 0),
+        "companies_total": row.get("companies_total", 0),
+        "error": row.get("error"),
+    }
 
 
 @app.get("/api/projects/{project_id}/keyword-scan/download")
@@ -1148,24 +1169,3 @@ async def keyword_scan_download_with_contacts(project_id: str):
             "Content-Disposition": f"attachment; filename=keyword_scan_with_contacts_{project_id[:8]}.xlsx"
         },
     )
-
-
-@app.get("/api/projects/{project_id}/keyword-scan/job-status")
-async def keyword_scan_job_status(project_id: str):
-    """Returns current keyword scan status from the DB."""
-    result = (
-        supabase.table("keyword_scans")
-        .select("status, companies_done, companies_total, error, updated_at")
-        .eq("project_id", project_id)
-        .execute()
-    )
-    if not result.data:
-        return {"status": "not_found"}
-    row = result.data[0]
-    return {
-        "status": row.get("status", "not_found"),
-        "companies_done": row.get("companies_done", 0),
-        "companies_total": row.get("companies_total", 0),
-        "error": row.get("error"),
-        "updated_at": row.get("updated_at"),
-    }
