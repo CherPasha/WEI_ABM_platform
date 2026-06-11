@@ -283,6 +283,12 @@
                         <span id="kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
                     </div>
                     <div id="keyword-groups-container"></div>
+                    <!-- Keyword scan status panel -->
+                    <div id="kw-scan-status" style="display:none; margin-bottom:0.75em;">
+                        <p id="kw-scan-status-text" style="font-size:0.9em; margin:0 0 0.4em;"></p>
+                        <progress id="kw-scan-progress-bar" value="0" max="100" style="width:100%; display:none;"></progress>
+                    </div>
+
                     <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
                         Run Keyword Scan
                     </button>
@@ -780,44 +786,93 @@
             }
         }
 
+        // ---- Keyword Scan Status ----
+        let kwScanPollInterval = null;
+
+        function updateKeywordScanPanel(data) {
+            const panel = document.getElementById("kw-scan-status");
+            const text  = document.getElementById("kw-scan-status-text");
+            const bar   = document.getElementById("kw-scan-progress-bar");
+            const btn   = document.getElementById("scan-btn");
+
+            if (data.status === "none") {
+                panel.style.display = "none";
+                btn.disabled = false;
+                btn.removeAttribute("aria-busy");
+                return;
+            }
+
+            panel.style.display = "block";
+            text.style.color = "";
+
+            if (data.status === "running") {
+                const done  = data.companies_done  || 0;
+                const total = data.companies_total || 0;
+                const started = data.started_at ? new Date(data.started_at).toLocaleString() : "";
+                const progress = total > 0 ? `${done} / ${total} companies` : "starting\u2026";
+                text.textContent = `Scan running \u2014 started ${started} \u00b7 ${progress}`;
+                bar.style.display = total > 0 ? "" : "none";
+                bar.value = total > 0 ? Math.round((done / total) * 100) : 0;
+                btn.disabled = true;
+                btn.setAttribute("aria-busy", "true");
+            } else if (data.status === "done") {
+                const started = data.started_at ? new Date(data.started_at).toLocaleString() : "";
+                text.textContent = `Last scan completed \u2014 started ${started}`;
+                bar.style.display = "none";
+                btn.disabled = false;
+                btn.removeAttribute("aria-busy");
+            } else if (data.status === "error") {
+                text.style.color = "var(--pico-color-red-500)";
+                text.textContent = `Scan failed: ${data.error || "Unknown error"}`;
+                bar.style.display = "none";
+                btn.disabled = false;
+                btn.removeAttribute("aria-busy");
+            }
+        }
+
+        async function loadKeywordScanStatus() {
+            try {
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/status`);
+                const data = await resp.json();
+                updateKeywordScanPanel(data);
+                return data.status;
+            } catch (err) {
+                console.error("Failed to load keyword scan status:", err);
+                return "none";
+            }
+        }
+
+        function startKeywordScanPolling() {
+            if (kwScanPollInterval) clearInterval(kwScanPollInterval);
+            kwScanPollInterval = setInterval(async () => {
+                const status = await loadKeywordScanStatus();
+                if (status === "done" || status === "error") {
+                    clearInterval(kwScanPollInterval);
+                    kwScanPollInterval = null;
+                    refreshTabStates();
+                }
+            }, 5000);
+        }
+
         async function runKeywordScan() {
             const btn = document.getElementById("scan-btn");
-            btn.setAttribute("aria-busy", "true");
             btn.disabled = true;
+            btn.setAttribute("aria-busy", "true");
             try {
-                const startResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/start`, {method: "POST"});
-                if (!startResp.ok) {
-                    const err = await startResp.json().catch(() => ({}));
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/start`, { method: "POST" });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
                     alert(err.detail || err.error || "Failed to start scan");
+                    btn.disabled = false;
+                    btn.removeAttribute("aria-busy");
                     return;
                 }
-                const {job_id} = await startResp.json();
-
-                while (true) {
-                    await new Promise(r => setTimeout(r, 2000));
-                    const statusResp = await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/${job_id}/status`);
-                    if (!statusResp.ok) {
-                        throw new Error(`Server error ${statusResp.status} while checking scan status — the scan may have caused the server to run out of memory`);
-                    }
-                    const status = await statusResp.json();
-                    if (status.status === "done") break;
-                    if (status.status === "error") {
-                        alert("Scan failed: " + (status.error || "Unknown error"));
-                        return;
-                    }
-                    if (status.status === "not_found") {
-                        alert("Scan job expired — please try again");
-                        return;
-                    }
-                }
-
-                // Scan complete — update tab states and Export tab buttons
-                refreshTabStates();
+                await loadKeywordScanStatus();
+                startKeywordScanPolling();
             } catch (err) {
                 alert("Scan failed: " + err.message);
-            } finally {
-                btn.removeAttribute("aria-busy");
                 btn.disabled = false;
+                btn.removeAttribute("aria-busy");
             }
         }
 
@@ -1083,7 +1138,7 @@
                 newsHint.style.display = '';
             }
 
-            if (scanStatus.has_result) {
+            if (scanStatus.status === 'done') {
                 kwBtn.href = `/api/projects/${PROJECT_ID}/keyword-scan/download`;
                 kwBtn.classList.remove('export-btn-disabled');
                 kwHint.style.display = 'none';
@@ -1093,7 +1148,7 @@
                 kwHint.style.display = '';
             }
 
-            if (scanStatus.has_result) {
+            if (scanStatus.status === 'done') {
                 kwContactsBtn.href = `/api/projects/${PROJECT_ID}/keyword-scan/download-with-contacts`;
                 kwContactsBtn.classList.remove('export-btn-disabled');
                 kwContactsHint.style.display = 'none';
@@ -1149,7 +1204,7 @@
 
                 // Tab 3 — Keywords
                 const hasKeywords = kwGroups.some(g => g.keywords && g.keywords.length > 0);
-                setTabState('keywords', scanStatus.has_result ? 'green' : hasKeywords ? 'yellow' : '');
+                setTabState('keywords', scanStatus.status === 'done' ? 'green' : hasKeywords ? 'yellow' : '');
 
                 // Tab 4 — Roles
                 const hasRoles          = (project.target_roles || []).length > 0;
@@ -1169,6 +1224,11 @@
         loadHistory();
         loadStopWords();
         loadKeywordGroups();
+        // Initialize keyword scan state on page load
+        loadKeywordScanStatus().then(status => {
+            if (status === "running") startKeywordScanPolling();
+        });
+
         // Initialize contact scan state on page load
         fetch(`/api/projects/${PROJECT_ID}/contact-scan/latest/status`)
             .then(r => r.json())
