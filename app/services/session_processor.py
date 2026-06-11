@@ -79,6 +79,18 @@ def _session_exists(session_id: str) -> bool:
     return bool(result.data)
 
 
+class _SessionCancelledError(Exception):
+    """Raised when a session scan is flagged for cancellation."""
+
+
+def _is_cancelling(session_id: str) -> bool:
+    """Return True if the session has been flagged for cancellation."""
+    result = _supabase_call_with_retry(
+        lambda: supabase.table("sessions").select("status").eq("id", session_id).execute()
+    )
+    return bool(result.data) and result.data[0].get("status") == "cancelling"
+
+
 def _get_session_flags(session_id: str) -> dict:
     """Fetch the run_* flags for a session."""
     result = (
@@ -122,6 +134,8 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
             legal_name = company.get("legal_name", "")
             if not legal_name:
                 continue
+            if _is_cancelling(session_id):
+                raise _SessionCancelledError()
 
             real_name = find_company_real_name(llm_client, legal_name)
             known_names = company.get("known_names") or [legal_name]
@@ -142,11 +156,15 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
         if not _session_exists(session_id):
             logger.warning("Session %s was deleted during processing, aborting", session_id)
             return
+        if _is_cancelling(session_id):
+            raise _SessionCancelledError()
 
         if run_postings:
             _update_session(session_id, status="finding_postings", postings_done=0)
 
             for i, company in enumerate(db_companies):
+                if _is_cancelling(session_id):
+                    raise _SessionCancelledError()
                 try:
                     known_names = company.get("known_names") or []
                     postings = find_all_postings_for_company(known_names)
@@ -174,11 +192,15 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
         if not _session_exists(session_id):
             logger.warning("Session %s was deleted during processing, aborting", session_id)
             return
+        if _is_cancelling(session_id):
+            raise _SessionCancelledError()
 
         if run_news:
             _update_session(session_id, status="finding_news", news_done=0)
 
             for i, company in enumerate(db_companies):
+                if _is_cancelling(session_id):
+                    raise _SessionCancelledError()
                 try:
                     known_names = company.get("known_names") or []
                     articles = find_all_news_for_company(known_names)
@@ -206,6 +228,25 @@ def process_session(session_id: str, file_bytes: bytes, filename: str):
         _update_session(session_id, status="completed")
         logger.info("Session %s completed successfully", session_id)
 
+    except _SessionCancelledError:
+        logger.info("Session %s cancelled, cleaning up", session_id)
+        try:
+            supabase.table("postings").delete().eq("session_id", session_id).execute()
+        except Exception:
+            logger.warning("Failed to delete postings for cancelled session %s", session_id)
+        try:
+            supabase.table("news_articles").delete().eq("session_id", session_id).execute()
+        except Exception:
+            logger.warning("Failed to delete news_articles for cancelled session %s", session_id)
+        try:
+            companies = _fetch_all_companies(session_id)
+            for c in companies:
+                supabase.table("companies").update(
+                    {"known_names": [c["legal_name"]]}
+                ).eq("id", c["id"]).execute()
+        except Exception:
+            logger.warning("Failed to reset known_names for cancelled session %s", session_id)
+        _update_session(session_id, status="cancelled", names_done=0, postings_done=0, news_done=0)
     except Exception as e:
         logger.exception("Session %s failed: %s", session_id, e)
         _update_session(session_id, status="failed", error_message=str(e)[:500])
@@ -251,6 +292,8 @@ def resume_session(session_id: str):
                 if not legal_name:
                     _update_session(session_id, names_done=i + 1)
                     continue
+                if _is_cancelling(session_id):
+                    raise _SessionCancelledError()
 
                 real_name = find_company_real_name(llm_client, legal_name)
                 known_names = company.get("known_names") or [legal_name]
@@ -275,6 +318,8 @@ def resume_session(session_id: str):
             _update_session(session_id, status="finding_postings")
 
             for i, company in enumerate(db_companies[postings_done:], start=postings_done):
+                if _is_cancelling(session_id):
+                    raise _SessionCancelledError()
                 try:
                     known_names = company.get("known_names") or []
                     postings = find_all_postings_for_company(known_names)
@@ -302,6 +347,8 @@ def resume_session(session_id: str):
             _update_session(session_id, status="finding_news")
 
             for i, company in enumerate(db_companies[news_done:], start=news_done):
+                if _is_cancelling(session_id):
+                    raise _SessionCancelledError()
                 try:
                     known_names = company.get("known_names") or []
                     articles = find_all_news_for_company(known_names)
@@ -327,6 +374,25 @@ def resume_session(session_id: str):
         _update_session(session_id, status="completed")
         logger.info("Session %s resumed and completed successfully", session_id)
 
+    except _SessionCancelledError:
+        logger.info("Session %s cancelled, cleaning up", session_id)
+        try:
+            supabase.table("postings").delete().eq("session_id", session_id).execute()
+        except Exception:
+            logger.warning("Failed to delete postings for cancelled session %s", session_id)
+        try:
+            supabase.table("news_articles").delete().eq("session_id", session_id).execute()
+        except Exception:
+            logger.warning("Failed to delete news_articles for cancelled session %s", session_id)
+        try:
+            companies = _fetch_all_companies(session_id)
+            for c in companies:
+                supabase.table("companies").update(
+                    {"known_names": [c["legal_name"]]}
+                ).eq("id", c["id"]).execute()
+        except Exception:
+            logger.warning("Failed to reset known_names for cancelled session %s", session_id)
+        _update_session(session_id, status="cancelled", names_done=0, postings_done=0, news_done=0)
     except Exception as e:
         logger.exception("Resume of session %s failed: %s", session_id, e)
         _update_session(session_id, status="failed", error_message=str(e)[:500])
