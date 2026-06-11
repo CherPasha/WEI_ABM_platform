@@ -2,6 +2,8 @@ import io
 import re
 import logging
 import time
+from datetime import datetime, timezone
+from typing import Callable
 
 import pandas as pd
 
@@ -25,6 +27,28 @@ def _extract_sentences(text: str, keyword_pattern: re.Pattern) -> list[str]:
     """Find all sentences in text that contain the keyword."""
     sentences = SENTENCE_SPLIT_RE.split(text)
     return [s.strip() for s in sentences if keyword_pattern.search(s)]
+
+
+def _is_checkpointed(
+    company_ids: list[str],
+    threshold: datetime,
+    scanned_map: dict,
+) -> bool:
+    """Return True if any company row has keyword_scanned_at >= threshold."""
+    cmp_threshold = threshold if threshold.tzinfo else threshold.replace(tzinfo=timezone.utc)
+    for cid in company_ids:
+        ts_str = scanned_map.get(cid)
+        if ts_str is None:
+            continue
+        try:
+            ts = datetime.fromisoformat(ts_str)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts >= cmp_threshold:
+                return True
+        except (ValueError, TypeError):
+            continue
+    return False
 
 
 def _fetch_all(table: str, column: str, value: str, select: str = "*") -> list[dict]:
