@@ -31,6 +31,18 @@ def _update_scan(scan_id: str, **fields) -> None:
     _supabase_call_with_retry(lambda: supabase.table("contact_scans").update(fields).eq("id", scan_id).execute())
 
 
+class _ContactScanCancelledError(Exception):
+    """Raised when a contact scan is flagged for cancellation."""
+
+
+def _is_cancelling_scan(scan_id: str) -> bool:
+    """Return True if the contact scan has been flagged for cancellation."""
+    result = _supabase_call_with_retry(
+        lambda: supabase.table("contact_scans").select("status").eq("id", scan_id).execute()
+    )
+    return bool(result.data) and result.data[0].get("status") == "cancelling"
+
+
 def _batch_insert_contacts(rows: list[dict]) -> None:
     for i in range(0, len(rows), _BATCH_SIZE):
         batch = rows[i:i + _BATCH_SIZE]
@@ -152,6 +164,8 @@ def run_contact_scan(scan_id: str) -> None:
 
         # ── Phase 1: Hunter.io domain search + optional LLM enrichment per company ──
         for i, company in enumerate(companies):
+            if _is_cancelling_scan(scan_id):
+                raise _ContactScanCancelledError()
             company_id: str = company["id"]
             website_url: str | None = company.get("website_url")
             existing_emails = _get_existing_emails(company_id)
@@ -284,6 +298,13 @@ def run_contact_scan(scan_id: str) -> None:
         # _update_scan(scan_id, status="completed")
         logger.info("Contact scan %s completed, %d contacts added", scan_id, contacts_added)
 
+    except _ContactScanCancelledError:
+        logger.info("Contact scan %s cancelled, cleaning up", scan_id)
+        try:
+            supabase.table("contacts").delete().eq("contact_scan_id", scan_id).execute()
+        except Exception:
+            logger.warning("Failed to delete contacts for cancelled scan %s", scan_id)
+        _update_scan(scan_id, status="cancelled")
     except Exception as e:
         logger.exception("Contact scan %s failed: %s", scan_id, e)
         try:
