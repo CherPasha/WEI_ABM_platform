@@ -9,6 +9,11 @@ import pandas as pd
 
 from app.database import supabase
 
+
+class ScanCancelledError(Exception):
+    """Raised when a keyword scan is flagged for cancellation by the user."""
+
+
 _MAX_SENTENCES_PER_KW = 5  # cap stored sentences to bound memory and DataFrame size
 
 logger = logging.getLogger(__name__)
@@ -117,6 +122,7 @@ def scan_project_keywords(
     scan_started_at: datetime,
     on_total_known: Callable[[int], None],
     on_company_done: Callable[[int], None],
+    is_cancelled: Callable[[], bool] = lambda: False,
 ) -> dict:
     """Scan all postings in a project for keyword matches.
 
@@ -255,6 +261,8 @@ def scan_project_keywords(
         # 6. For each company x keyword, search postings and news
         for uc in batch:
             time.sleep(0)  # yield GIL once per company so the event loop can serve status polls
+            if is_cancelled():
+                raise ScanCancelledError()
             company_postings = []
             company_news = []
             for cid in uc["company_ids"]:
