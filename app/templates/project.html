@@ -287,6 +287,10 @@
                     <div id="kw-scan-status" style="display:none; margin-bottom:0.75em;">
                         <p id="kw-scan-status-text" style="font-size:0.9em; margin:0 0 0.4em;"></p>
                         <progress id="kw-scan-progress-bar" value="0" max="100" style="width:100%; display:none;"></progress>
+                        <button id="kw-stop-btn" onclick="stopKeywordScan()" class="secondary"
+                                style="margin-top:0.4em; display:none; font-size:0.85em; padding:0.3em 0.8em; color:var(--pico-color-red-500);">
+                            Stop Scan
+                        </button>
                     </div>
 
                     <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
@@ -794,11 +798,13 @@
             const text  = document.getElementById("kw-scan-status-text");
             const bar   = document.getElementById("kw-scan-progress-bar");
             const btn   = document.getElementById("scan-btn");
+            const stopBtn = document.getElementById("kw-stop-btn");
 
             if (data.status === "none") {
                 panel.style.display = "none";
                 btn.disabled = false;
                 btn.removeAttribute("aria-busy");
+                stopBtn.style.display = "none";
                 return;
             }
 
@@ -815,18 +821,40 @@
                 bar.value = total > 0 ? Math.round((done / total) * 100) : 0;
                 btn.disabled = true;
                 btn.setAttribute("aria-busy", "true");
+                stopBtn.style.display = "";
+                stopBtn.disabled = false;
+                stopBtn.textContent = "Stop Scan";
+                stopBtn.removeAttribute("aria-busy");
+            } else if (data.status === "cancelling") {
+                text.textContent = "Stopping\u2026";
+                bar.style.display = "none";
+                btn.disabled = true;
+                btn.setAttribute("aria-busy", "true");
+                stopBtn.style.display = "";
+                stopBtn.disabled = true;
+                stopBtn.setAttribute("aria-busy", "true");
+                stopBtn.textContent = "Stopping\u2026";
             } else if (data.status === "done") {
                 const started = data.started_at ? new Date(data.started_at).toLocaleString() : "";
                 text.textContent = `Last scan completed \u2014 started ${started}`;
                 bar.style.display = "none";
                 btn.disabled = false;
                 btn.removeAttribute("aria-busy");
+                stopBtn.style.display = "none";
             } else if (data.status === "error") {
                 text.style.color = "var(--pico-color-red-500)";
                 text.textContent = `Scan failed: ${data.error || "Unknown error"}`;
                 bar.style.display = "none";
                 btn.disabled = false;
                 btn.removeAttribute("aria-busy");
+                stopBtn.style.display = "none";
+            } else if (data.status === "cancelled") {
+                text.style.color = "var(--pico-muted-color)";
+                text.textContent = "Scan stopped \u2014 results discarded";
+                bar.style.display = "none";
+                btn.disabled = false;
+                btn.removeAttribute("aria-busy");
+                stopBtn.style.display = "none";
             }
         }
 
@@ -846,7 +874,7 @@
             if (kwScanPollInterval) clearInterval(kwScanPollInterval);
             kwScanPollInterval = setInterval(async () => {
                 const status = await loadKeywordScanStatus();
-                if (status === "done" || status === "error") {
+                if (status === "done" || status === "error" || status === "cancelled") {
                     clearInterval(kwScanPollInterval);
                     kwScanPollInterval = null;
                     refreshTabStates();
@@ -873,6 +901,20 @@
                 alert("Scan failed: " + err.message);
                 btn.disabled = false;
                 btn.removeAttribute("aria-busy");
+            }
+        }
+
+        async function stopKeywordScan() {
+            if (!confirm("Stop the keyword scan? All progress will be discarded.")) return;
+            const stopBtn = document.getElementById("kw-stop-btn");
+            stopBtn.disabled = true;
+            stopBtn.setAttribute("aria-busy", "true");
+            try {
+                await fetch(`/api/projects/${PROJECT_ID}/keyword-scan/cancel`, { method: "POST" });
+            } catch (err) {
+                console.error("Failed to cancel keyword scan:", err);
+                stopBtn.disabled = false;
+                stopBtn.removeAttribute("aria-busy");
             }
         }
 
@@ -1226,7 +1268,7 @@
         loadKeywordGroups();
         // Initialize keyword scan state on page load
         loadKeywordScanStatus().then(status => {
-            if (status === "running") startKeywordScanPolling();
+            if (status === "running" || status === "cancelling") startKeywordScanPolling();
         });
 
         // Initialize contact scan state on page load
