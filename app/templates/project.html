@@ -365,6 +365,11 @@
                             </tbody>
                         </table>
                         <p id="scan-contacts-status" style="font-size:0.9em; margin-top:0.5em;"></p>
+                        <button id="contact-stop-btn" onclick="stopContactScan()"
+                                style="display:none; font-size:0.85em; padding:0.3em 0.8em; color:var(--pico-color-red-500); margin-top:0.3em;"
+                                class="secondary">
+                            Stop Contact Scan
+                        </button>
                     </div>
 
                 </article>
@@ -1065,6 +1070,18 @@
             }
         }
 
+        async function stopContactScan() {
+            if (!confirm("Stop the contact scan? All contacts found so far will be deleted.")) return;
+            const stopBtn = document.getElementById("contact-stop-btn");
+            if (stopBtn) { stopBtn.disabled = true; stopBtn.setAttribute("aria-busy", "true"); }
+            try {
+                await fetch(`/api/projects/${PROJECT_ID}/contact-scan/cancel`, { method: "POST" });
+            } catch (err) {
+                console.error("Failed to cancel contact scan:", err);
+                if (stopBtn) { stopBtn.disabled = false; stopBtn.removeAttribute("aria-busy"); }
+            }
+        }
+
         function startContactScanPolling() {
             if (contactScanPollInterval) clearInterval(contactScanPollInterval);
             contactScanPollInterval = setInterval(pollContactScan, 3000);
@@ -1101,13 +1118,14 @@
                 const btn = document.getElementById("scan-contacts-btn");
                 const statusEl = document.getElementById("scan-contacts-status");
 
+                const stopBtn = document.getElementById("contact-stop-btn");
                 if (data.status === "completed") {
                     clearInterval(contactScanPollInterval);
                     btn.disabled = false;
                     btn.removeAttribute("aria-busy");
-                    statusEl.textContent =
-                        `Completed — ${data.contacts_added || 0} contacts added`;
+                    statusEl.textContent = `Completed — ${data.contacts_added || 0} contacts added`;
                     statusEl.style.color = "var(--pico-color-green-500)";
+                    if (stopBtn) { stopBtn.style.display = "none"; }
                     refreshTabStates();
                 } else if (data.status === "failed") {
                     clearInterval(contactScanPollInterval);
@@ -1115,10 +1133,24 @@
                     btn.removeAttribute("aria-busy");
                     statusEl.textContent = "Failed: " + (data.error_message || "Unknown error");
                     statusEl.style.color = "var(--pico-color-red-500)";
+                    if (stopBtn) { stopBtn.style.display = "none"; }
+                } else if (data.status === "cancelled") {
+                    clearInterval(contactScanPollInterval);
+                    btn.disabled = false;
+                    btn.removeAttribute("aria-busy");
+                    statusEl.textContent = "Contact scan stopped \u2014 results discarded";
+                    statusEl.style.color = "var(--pico-muted-color)";
+                    if (stopBtn) { stopBtn.style.display = "none"; }
+                } else if (data.status === "cancelling") {
+                    btn.disabled = true;
+                    btn.setAttribute("aria-busy", "true");
+                    statusEl.textContent = "Stopping\u2026";
+                    if (stopBtn) { stopBtn.disabled = true; stopBtn.setAttribute("aria-busy", "true"); stopBtn.textContent = "Stopping\u2026"; }
                 } else {
                     // still running
                     btn.disabled = true;
                     btn.setAttribute("aria-busy", "true");
+                    if (stopBtn) { stopBtn.style.display = ""; stopBtn.disabled = false; stopBtn.removeAttribute("aria-busy"); stopBtn.textContent = "Stop Contact Scan"; }
                 }
             } catch (err) {
                 console.error("Contact scan poll error:", err);
@@ -1277,7 +1309,7 @@
             .then(data => {
                 if (data.status === "none") return;
                 document.getElementById("contact-scan-progress").style.display = "block";
-                if (data.status === "running") {
+                if (data.status === "running" || data.status === "cancelling") {
                     startContactScanPolling();
                 } else {
                     pollContactScan();
