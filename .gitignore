@@ -12,6 +12,7 @@
 
 # IDE / tooling
 .claude/
+.worktrees/
 
 # Python
 .venv/
