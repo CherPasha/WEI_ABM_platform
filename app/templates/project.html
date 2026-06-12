@@ -215,6 +215,11 @@
                             </tr>
                         </tbody>
                     </table>
+                    <button id="session-stop-btn" onclick="stopActiveSession()"
+                            style="display:none; margin-top:0.5em; font-size:0.85em; padding:0.3em 0.8em; color:var(--pico-color-red-500);"
+                            class="secondary">
+                        Stop Scan
+                    </button>
                 </article>
 
                 <!-- File History -->
@@ -433,7 +438,7 @@
         let currentSessionId = null;
         let pollInterval = null;
 
-        const ACTIVE_STATUSES = new Set(["resolving_names", "finding_postings", "finding_news", "resuming"]);
+        const ACTIVE_STATUSES = new Set(["resolving_names", "finding_postings", "finding_news", "resuming", "parsing", "cancelling"]);
 
         function stageCell(done, total, activeStatus, myStatus) {
             if (!total) return '<span style="color:#aaa">&mdash;</span>';
@@ -515,8 +520,18 @@
                 setStage("postings",   data.postings_done   || 0);
                 setStage("news",       data.news_done       || 0);
 
+                const stopBtn = document.getElementById("session-stop-btn");
+                if (ACTIVE_STATUSES.has(data.status) && data.status !== "cancelling") {
+                    if (stopBtn) { stopBtn.style.display = ""; stopBtn.disabled = false; stopBtn.removeAttribute("aria-busy"); stopBtn.textContent = "Stop Scan"; }
+                } else if (data.status === "cancelling") {
+                    if (stopBtn) { stopBtn.style.display = ""; stopBtn.disabled = true; stopBtn.setAttribute("aria-busy", "true"); stopBtn.textContent = "Stopping\u2026"; }
+                } else {
+                    if (stopBtn) { stopBtn.style.display = "none"; }
+                }
+
                 if (data.status === "completed") {
                     clearInterval(pollInterval);
+                    document.getElementById("progress-section").style.display = "none";
                     loadHistory();
                     refreshTabStates();
                 } else if (data.status === "failed") {
@@ -524,6 +539,10 @@
                     const errorEl = document.getElementById("error-msg");
                     errorEl.textContent = "Processing failed: " + (data.error_message || "Unknown error");
                     errorEl.style.display = "block";
+                    loadHistory();
+                } else if (data.status === "cancelled") {
+                    clearInterval(pollInterval);
+                    document.getElementById("progress-section").style.display = "none";
                     loadHistory();
                 }
             } catch (err) {
@@ -547,8 +566,8 @@
                     const date = s.created_at ? new Date(s.created_at).toLocaleString() : "-";
                     const total = s.total_companies || 0;
                     const isComplete = s.status === "completed";
-                    const isActive = ["uploading", "parsing", "resolving_names", "finding_postings", "finding_news", "resuming"].includes(s.status);
-                    const canResume = !isComplete && !isActive && total > 0;
+                    const isActive = ["uploading", "parsing", "resolving_names", "finding_postings", "finding_news", "resuming", "cancelling"].includes(s.status);
+                    const canResume = !isComplete && !isActive && total > 0 && s.status !== "uploading";
 
                     const dlLinks = isComplete
                         ? `<a href="/api/sessions/${s.id}/postings/download">Postings</a> | <a href="/api/sessions/${s.id}/news/download">News</a> | `
@@ -556,12 +575,20 @@
                     const resumeLink = canResume
                         ? `<a href="#" onclick="resumeSession('${s.id}'); return false;">Resume</a> | `
                         : "";
-                    const actions = dlLinks + resumeLink + `<a href="#" onclick="deleteSession('${s.id}'); return false;" style="color:var(--pico-color-red-500)">Delete</a>`;
+                    const stopLink = isActive && s.status !== "cancelling"
+                        ? `<a href="#" onclick="stopSessionById('${s.id}'); return false;" style="color:var(--pico-color-red-500)">Stop</a> | `
+                        : isActive && s.status === "cancelling"
+                            ? `<span style="color:var(--pico-muted-color); font-size:0.85em;">Stopping\u2026</span> | `
+                            : "";
+                    const actions = dlLinks + resumeLink + stopLink + `<a href="#" onclick="deleteSession('${s.id}'); return false;" style="color:var(--pico-color-red-500)">Delete</a>`;
 
                     const isFailed = s.status === "failed";
+                    const isCancelled = s.status === "cancelled";
                     const filename = isFailed
                         ? `<span style="color:var(--pico-color-red-500)" title="Failed">${s.filename} \u2715</span>`
-                        : s.filename;
+                        : isCancelled
+                            ? `<span style="color:var(--pico-muted-color)" title="Stopped">${s.filename} \u25a0</span>`
+                            : s.filename;
                     return `<tr>
                         <td>${filename}</td>
                         <td>${stageCell(s.names_done, total, s.status, "resolving_names")}</td>
@@ -586,6 +613,24 @@
             document.getElementById("error-msg").style.display = "none";
             startPolling(sessionId);
             loadHistory();
+        }
+
+        async function stopActiveSession() {
+            if (!currentSessionId) return;
+            await stopSessionById(currentSessionId);
+        }
+
+        async function stopSessionById(sessionId) {
+            if (!confirm("Stop this scan? The company list is kept but all names, postings, and news found so far will be discarded.")) return;
+            const stopBtn = document.getElementById("session-stop-btn");
+            if (stopBtn) { stopBtn.disabled = true; stopBtn.setAttribute("aria-busy", "true"); }
+            try {
+                await fetch(`/api/sessions/${sessionId}/cancel`, { method: "POST" });
+                loadHistory();
+            } catch (err) {
+                console.error("Failed to cancel session scan:", err);
+                if (stopBtn) { stopBtn.disabled = false; stopBtn.removeAttribute("aria-busy"); }
+            }
         }
 
         // ---- Delete ----
