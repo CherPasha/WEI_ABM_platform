@@ -17,7 +17,7 @@ from app.database import supabase
 from app.models import CreateKeywordGroup, RenameKeywordGroup, CreateKeyword, CreateStopWord, UpdateProject, ContactScanSettings
 from app.services.session_processor import process_session, resume_session
 from app.services.contact_scanner import run_contact_scan
-from app.services.keyword_scanner import scan_project_keywords, generate_keyword_xlsx, derive_quick_summary_df
+from app.services.keyword_scanner import scan_project_keywords, generate_keyword_xlsx, derive_quick_summary_df, ScanCancelledError
 from app.services.keyword_parser import parse_keyword_xlsx, parse_stop_word_xlsx, parse_roles_xlsx
 
 logging.basicConfig(level=logging.INFO)
@@ -224,6 +224,23 @@ async def contact_scan_latest_status(project_id: str):
     return result.data[0]
 
 
+@app.post("/api/projects/{project_id}/contact-scan/cancel")
+async def contact_scan_cancel(project_id: str):
+    result = (
+        supabase.table("contact_scans")
+        .select("id, status")
+        .eq("project_id", project_id)
+        .eq("status", "running")
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=409, detail="No running contact scan found")
+    scan_id = result.data[0]["id"]
+    supabase.table("contact_scans").update({"status": "cancelling"}).eq("id", scan_id).execute()
+    return {}
+
+
 @app.put("/api/projects/{project_id}/contact-scan/settings")
 async def update_contact_scan_settings(project_id: str, body: ContactScanSettings):
     result = supabase.table("projects").update({
@@ -321,6 +338,23 @@ async def resume_session_endpoint(session_id: str, background_tasks: BackgroundT
     supabase.table("sessions").update({"status": "resuming", "error_message": None}).eq("id", session_id).execute()
     background_tasks.add_task(resume_session, session_id)
     return {"session_id": session_id, "status": "resuming"}
+
+
+@app.post("/api/sessions/{session_id}/cancel")
+async def cancel_session(session_id: str):
+    result = (
+        supabase.table("sessions")
+        .select("status")
+        .eq("id", session_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Session not found")
+    active = {"resolving_names", "finding_postings", "finding_news", "resuming", "parsing"}
+    if result.data[0].get("status") not in active:
+        raise HTTPException(status_code=409, detail="Session is not running")
+    supabase.table("sessions").update({"status": "cancelling"}).eq("id", session_id).execute()
+    return {}
 
 
 # ──────────────────────── Delete ────────────────────────
@@ -959,11 +993,24 @@ def _run_scan_task(project_id: str, started_at: datetime | None = None) -> None:
             _logger.warning("Failed to update companies_done for project %s", project_id)
 
     try:
+        def _is_scan_cancelled() -> bool:
+            try:
+                row = (
+                    supabase.table("keyword_scans")
+                    .select("status")
+                    .eq("project_id", project_id)
+                    .execute()
+                )
+                return bool(row.data) and row.data[0].get("status") == "cancelling"
+            except Exception:
+                return False
+
         scan_result = scan_project_keywords(
             project_id,
             started_at,
             _on_total_known,
             _on_company_done,
+            _is_scan_cancelled,
         )
         # On resume, scan_result only has newly-processed companies.
         # Merge with previous XLSX to produce a complete result.
@@ -985,6 +1032,21 @@ def _run_scan_task(project_id: str, started_at: datetime | None = None) -> None:
             "status": "done",
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
+    except ScanCancelledError:
+        _logger.info("Keyword scan cancelled for project %s, cleaning up", project_id)
+        try:
+            supabase.table("projects").update(
+                {"keyword_scan_result": None}
+            ).eq("id", project_id).execute()
+        except Exception:
+            _logger.warning("Failed to clear keyword_scan_result for project %s", project_id)
+        try:
+            _upsert_keyword_scan(project_id, {
+                "status": "cancelled",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            _logger.warning("Failed to set cancelled status for project %s", project_id)
     except ValueError as e:
         _upsert_keyword_scan(project_id, {
             "status": "error",
@@ -1014,6 +1076,20 @@ async def keyword_scan_start(project_id: str, background_tasks: BackgroundTasks)
     if result.data and result.data[0].get("status") == "running":
         raise HTTPException(status_code=409, detail="Scan already running")
     background_tasks.add_task(_run_scan_task, project_id)
+    return {}
+
+
+@app.post("/api/projects/{project_id}/keyword-scan/cancel")
+async def keyword_scan_cancel(project_id: str):
+    result = (
+        supabase.table("keyword_scans")
+        .select("status")
+        .eq("project_id", project_id)
+        .execute()
+    )
+    if not result.data or result.data[0].get("status") != "running":
+        raise HTTPException(status_code=409, detail="No running keyword scan found")
+    supabase.table("keyword_scans").update({"status": "cancelling"}).eq("project_id", project_id).execute()
     return {}
 
 
