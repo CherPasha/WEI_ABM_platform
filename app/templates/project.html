@@ -140,9 +140,17 @@
 </head>
 <body>
     <main class="container">
-        <a href="/" class="back-link">&larr; All Projects</a>
-        <h1>ABM Platform</h1>
-        <p>Upload a company list (.xlsx) to start processing.</p>
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+                <a href="/" class="back-link">&larr; All Projects</a>
+                <h1>ABM Platform</h1>
+                <p>Upload a company list (.xlsx) to start processing.</p>
+            </div>
+            <button class="secondary" onclick="deleteThisProject()"
+                    style="margin-top:0.5em; color:var(--pico-color-red-500); border-color:var(--pico-color-red-500); white-space:nowrap; flex-shrink:0;">
+                Delete Project
+            </button>
+        </div>
 
 
         <div class="tabs">
@@ -713,6 +721,34 @@
                 console.error("Failed to cancel session scan:", err);
                 if (stopBtn) { stopBtn.disabled = false; stopBtn.removeAttribute("aria-busy"); }
             }
+        }
+
+        // ---- Delete Project ----
+        async function deleteThisProject() {
+            let projectName = PROJECT_ID;
+            try {
+                const r = await fetch(`/api/projects/${PROJECT_ID}/details`);
+                if (r.ok) projectName = (await r.json()).name || PROJECT_ID;
+            } catch (_) {}
+
+            try {
+                const depsResp = await fetch(`/api/projects/${PROJECT_ID}/dependents`);
+                const deps = await depsResp.json();
+
+                if (deps.length) {
+                    const depNames = [...new Set(deps.map(d => d.project_name))].join(", ");
+                    if (!confirm(`Project "${projectName}" is imported by: ${depNames}.\n\nDeleting will break their imported sessions — those companies will be skipped in keyword scans and downloads will stop working.\n\nContinue?`)) return;
+                    await fetch(`/api/projects/${PROJECT_ID}?force=true`, { method: "DELETE" });
+                } else {
+                    if (!confirm(`Delete project "${projectName}" and ALL its files/data?`)) return;
+                    await fetch(`/api/projects/${PROJECT_ID}`, { method: "DELETE" });
+                }
+            } catch (err) {
+                console.error("Failed to check dependents:", err);
+                if (!confirm(`Delete project "${projectName}" and ALL its files/data?`)) return;
+                await fetch(`/api/projects/${PROJECT_ID}`, { method: "DELETE" });
+            }
+            window.location.href = "/";
         }
 
         // ---- Delete ----

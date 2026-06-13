@@ -68,7 +68,6 @@
                     return `<article class="project-card" onclick="window.location='/projects/${p.id}'">
                         <div class="project-header">
                             <h4 style="margin:0;">${escapeHtml(p.name)}</h4>
-                            <a href="#" class="delete" onclick="deleteProject(event, '${p.id}', ${JSON.stringify(p.name)})">Delete</a>
                         </div>
                         <span class="project-date">Created ${date}</span>
                         ${roles ? `<br><span style="font-size:0.85em; color:var(--pico-muted-color);">Roles: ${roles}</span>` : ""}
