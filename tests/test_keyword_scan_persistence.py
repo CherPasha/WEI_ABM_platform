@@ -59,7 +59,7 @@ def _make_fetch_in_side_effect(checkpoint_map=None):
     if checkpoint_map is None:
         checkpoint_map = {"c1": None, "c2": None}
 
-    def fake(table, column, values, select="*"):
+    def fake(table, column, values, select="*", **kwargs):
         if table == "keywords":
             return [{"id": "k1", "group_id": "g1", "keyword": "AI"}]
         if table == "companies" and column == "session_id":

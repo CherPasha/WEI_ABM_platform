@@ -18,7 +18,7 @@ def _make_fetch_all():
 
 
 def _make_fetch_in():
-    def fake(table, column, values, select="*"):
+    def fake(table, column, values, select="*", **kwargs):
         if table == "keywords":
             return [{"id": "k1", "group_id": "g1", "keyword": "AI"}]
         if table == "companies" and column == "session_id":
