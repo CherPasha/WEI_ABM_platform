@@ -192,6 +192,40 @@
                     <p id="error-msg"></p>
                 </article>
 
+                <!-- Import from project -->
+                <article>
+                    <h3>Import from Another Project</h3>
+                    <p style="font-size:0.85em; color:var(--pico-muted-color); margin-bottom:0.75em;">
+                        Reference companies (with their postings and news) from a completed session in another project. Keywords and roles are not imported.
+                    </p>
+                    <button class="secondary" onclick="openImportModal()">Import from project</button>
+                </article>
+
+                <!-- Import modal -->
+                <dialog id="import-modal">
+                    <article>
+                        <header>
+                            <button aria-label="Close" rel="prev" onclick="closeImportModal()"></button>
+                            <h3>Import from Another Project</h3>
+                        </header>
+                        <div id="import-step-1">
+                            <label for="import-project-select">Select source project:</label>
+                            <select id="import-project-select" onchange="loadImportSessions()">
+                                <option value="">-- Choose a project --</option>
+                            </select>
+                        </div>
+                        <div id="import-step-2" style="display:none; margin-top:1em;">
+                            <label for="import-session-select">Select session:</label>
+                            <select id="import-session-select"></select>
+                        </div>
+                        <p id="import-modal-error" style="color:var(--pico-color-red-500); display:none; margin-top:0.75em;"></p>
+                        <footer>
+                            <button class="secondary" onclick="closeImportModal()">Cancel</button>
+                            <button id="import-confirm-btn" onclick="confirmImport()" disabled>Import</button>
+                        </footer>
+                    </article>
+                </dialog>
+
                 <!-- Progress Section -->
                 <article class="progress-section" id="progress-section">
                     <h3>Processing: <span id="prog-filename">-</span></h3>
@@ -1334,6 +1368,102 @@
                 updateExportButtons(sessions, scanStatus, contactScan);
             } catch (err) {
                 console.error('refreshTabStates error:', err);
+            }
+        }
+
+        // ---- Import from project ----
+        async function openImportModal() {
+            const errorEl = document.getElementById("import-modal-error");
+            const step2   = document.getElementById("import-step-2");
+            const confirmBtn = document.getElementById("import-confirm-btn");
+            errorEl.style.display = "none";
+            step2.style.display = "none";
+            confirmBtn.disabled = true;
+
+            const projectSelect = document.getElementById("import-project-select");
+            projectSelect.value = "";
+
+            try {
+                const resp = await fetch("/api/projects");
+                const projects = await resp.json();
+                const others = projects.filter(p => p.id !== PROJECT_ID);
+                projectSelect.innerHTML = '<option value="">-- Choose a project --</option>' +
+                    others.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+            } catch (err) {
+                projectSelect.innerHTML = '<option value="">Failed to load projects</option>';
+            }
+
+            document.getElementById("import-modal").showModal();
+        }
+
+        function closeImportModal() {
+            document.getElementById("import-modal").close();
+        }
+
+        async function loadImportSessions() {
+            const sourceProjectId = document.getElementById("import-project-select").value;
+            const step2      = document.getElementById("import-step-2");
+            const confirmBtn = document.getElementById("import-confirm-btn");
+
+            if (!sourceProjectId) {
+                step2.style.display = "none";
+                confirmBtn.disabled = true;
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/projects/${sourceProjectId}/sessions/completed?importing_into=${PROJECT_ID}`);
+                const sessions = await resp.json();
+                const select = document.getElementById("import-session-select");
+
+                if (!sessions.length) {
+                    select.innerHTML = '<option value="">No eligible sessions in this project</option>';
+                    confirmBtn.disabled = true;
+                } else {
+                    select.innerHTML = sessions.map(s => {
+                        const date = s.created_at ? new Date(s.created_at).toLocaleDateString() : "";
+                        return `<option value="${s.id}">${escapeHtml(s.filename)} — ${s.total_companies || 0} companies (${date})</option>`;
+                    }).join("");
+                    confirmBtn.disabled = false;
+                }
+                step2.style.display = "";
+            } catch (err) {
+                console.error("Failed to load sessions:", err);
+            }
+        }
+
+        async function confirmImport() {
+            const sessionId  = document.getElementById("import-session-select").value;
+            if (!sessionId) return;
+
+            const btn     = document.getElementById("import-confirm-btn");
+            const errorEl = document.getElementById("import-modal-error");
+            btn.disabled  = true;
+            btn.setAttribute("aria-busy", "true");
+            errorEl.style.display = "none";
+
+            try {
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/sessions/import`, {
+                    method:  "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body:    JSON.stringify({ source_session_id: sessionId }),
+                });
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    errorEl.textContent = data.detail || "Import failed";
+                    errorEl.style.display = "block";
+                    btn.disabled = false;
+                    btn.removeAttribute("aria-busy");
+                    return;
+                }
+                closeImportModal();
+                loadHistory();
+                refreshTabStates();
+            } catch (err) {
+                errorEl.textContent = "Error: " + err.message;
+                errorEl.style.display = "block";
+                btn.disabled = false;
+                btn.removeAttribute("aria-busy");
             }
         }
 
