@@ -5,6 +5,7 @@ import uuid
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
@@ -14,7 +15,7 @@ from starlette.requests import Request
 from pydantic import BaseModel
 
 from app.database import supabase
-from app.models import CreateKeywordGroup, RenameKeywordGroup, CreateKeyword, CreateStopWord, UpdateProject, ContactScanSettings
+from app.models import CreateKeywordGroup, RenameKeywordGroup, CreateKeyword, CreateStopWord, UpdateProject, ContactScanSettings, ImportSession
 from app.services.session_processor import process_session, resume_session
 from app.services.contact_scanner import run_contact_scan
 from app.services.keyword_scanner import scan_project_keywords, generate_keyword_xlsx, derive_quick_summary_df, ScanCancelledError
@@ -291,7 +292,7 @@ async def upload_file(
 async def list_sessions(project_id: str):
     result = (
         supabase.table("sessions")
-        .select("id, filename, status, total_companies, names_done, postings_done, news_done, created_at")
+        .select("id, filename, status, total_companies, names_done, postings_done, news_done, created_at, type, source_session_id, source_project_name, source_session_filename")
         .eq("project_id", project_id)
         .order("created_at", desc=True)
         .limit(50)

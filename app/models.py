@@ -47,3 +47,7 @@ class SessionListItem(BaseModel):
 class ContactScanSettings(BaseModel):
     use_roles: bool
     keyword_only: bool
+
+
+class ImportSession(BaseModel):
+    source_session_id: str
