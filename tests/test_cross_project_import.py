@@ -236,3 +236,51 @@ def test_download_news_proxies_for_imported_session():
         resp = client.get("/api/sessions/imp-sess/news/download")
     assert resp.status_code == 200
     assert "spreadsheet" in resp.headers["content-type"]
+
+
+# ──────────────── keyword scanner ────────────────
+
+def test_keyword_scanner_uses_source_company_id_for_ghost():
+    """Ghost company (source_company_id set) fetches postings by source ID, not its own."""
+    from app.services.keyword_scanner import scan_project_keywords
+    from datetime import datetime, timezone
+
+    sb = _mock_sb()
+
+    ghost_id = "ghost-c1"
+    source_id = "source-c1"
+
+    call_seq = iter([
+        # keyword_groups
+        MagicMock(data=[{"id": "g1", "name": "Tech"}]),
+        # keywords
+        MagicMock(data=[{"id": "k1", "group_id": "g1", "keyword": "Python"}]),
+        # stop_words
+        MagicMock(data=[]),
+        # sessions for project
+        MagicMock(data=[{"id": "imported-sess"}]),
+        # companies for session — ghost company with source_company_id set
+        MagicMock(data=[{"id": ghost_id, "legal_name": "Acme", "inn": "123", "known_names": ["Acme"], "source_company_id": source_id}]),
+        # keyword_scanned_at checkpoint
+        MagicMock(data=[{"id": ghost_id, "keyword_scanned_at": None}]),
+        # postings fetched by source_id (effective) — has a Python match
+        MagicMock(data=[{"company_id": source_id, "title": "Python Developer", "snippet_requirement": "Python", "snippet_responsibility": ""}]),
+        # news fetched by source_id (effective)
+        MagicMock(data=[]),
+        # update company (checkpoint write) — we don't care about result
+        MagicMock(data=[{"id": ghost_id}]),
+    ])
+    sb.execute.side_effect = lambda: next(call_seq)
+
+    with patch("app.services.keyword_scanner.supabase", sb):
+        result = scan_project_keywords(
+            "proj-2",
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+            lambda n: None,
+            lambda n: None,
+        )
+
+    companies = result["companies"]
+    assert len(companies) == 1
+    assert companies[0]["inn"] == "123"
+    assert companies[0]["results"]["Python"]["count"] > 0

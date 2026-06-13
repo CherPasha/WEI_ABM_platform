@@ -193,7 +193,7 @@ def scan_project_keywords(
     # 3. Fetch all companies across sessions
     all_companies = _fetch_all_in(
         "companies", "session_id", session_ids,
-        select="id, legal_name, inn, known_names"
+        select="id, legal_name, inn, known_names, source_company_id"
     )
 
     # 4. Deduplicate companies by inn (fallback: lower(legal_name))
@@ -204,8 +204,11 @@ def scan_project_keywords(
         key = f"inn:{inn}" if inn else f"name:{legal_name.strip().lower()}"
 
         if key not in dedup:
-            dedup[key] = {"name": legal_name, "inn": inn, "company_ids": []}
-        dedup[key]["company_ids"].append(c["id"])
+            dedup[key] = {"name": legal_name, "inn": inn, "company_ids": [], "effective_ids": {}}
+        cid = c["id"]
+        dedup[key]["company_ids"].append(cid)
+        # Ghost companies (source_company_id set) fetch postings/news by source ID
+        dedup[key]["effective_ids"][cid] = c.get("source_company_id") or cid
 
     unique_companies = list(dedup.values())
 
@@ -241,9 +244,11 @@ def scan_project_keywords(
 
         batch = unprocessed[batch_start:batch_start + _COMPANY_BATCH]
         batch_cids = [cid for uc in batch for cid in uc["company_ids"]]
+        # Use effective IDs (source_company_id for ghost companies) when querying postings/news
+        effective_fetch_ids = list({uc["effective_ids"][cid] for uc in batch for cid in uc["company_ids"]})
 
         batch_postings = _fetch_all_in(
-            "postings", "company_id", batch_cids,
+            "postings", "company_id", effective_fetch_ids,
             select="company_id, title, snippet_requirement, snippet_responsibility"
         )
         postings_by_company: dict[str, list] = {}
@@ -251,7 +256,7 @@ def scan_project_keywords(
             postings_by_company.setdefault(p["company_id"], []).append(p)
 
         batch_news = _fetch_all_in(
-            "news_articles", "company_id", batch_cids,
+            "news_articles", "company_id", effective_fetch_ids,
             select="company_id, title, snippet, full_text"
         )
         news_by_company: dict[str, list] = {}
@@ -260,14 +265,15 @@ def scan_project_keywords(
 
         # 6. For each company x keyword, search postings and news
         for uc in batch:
-            time.sleep(0)  # yield GIL once per company so the event loop can serve status polls
+            time.sleep(0)
             if is_cancelled():
                 raise ScanCancelledError()
             company_postings = []
             company_news = []
             for cid in uc["company_ids"]:
-                company_postings.extend(postings_by_company.get(cid, []))
-                company_news.extend(news_by_company.get(cid, []))
+                effective_id = uc["effective_ids"][cid]
+                company_postings.extend(postings_by_company.get(effective_id, []))
+                company_news.extend(news_by_company.get(effective_id, []))
 
             # Pre-filter publications that contain a stop word (do this once, not per keyword)
             if stop_patterns:
