@@ -40,18 +40,23 @@ CREATE INDEX idx_contact_scans_project ON contact_scans(project_id);
 
 -- Sessions (one per uploaded file, belongs to a project)
 CREATE TABLE sessions (
-    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id       UUID        REFERENCES projects(id) ON DELETE CASCADE,
-    filename         TEXT        NOT NULL,
-    status           TEXT        NOT NULL DEFAULT 'uploading',
-    error_message    TEXT,
-    total_companies  INTEGER     DEFAULT 0,
-    names_done       INTEGER     DEFAULT 0,
-    postings_done    INTEGER     DEFAULT 0,
-    news_done        INTEGER     DEFAULT 0,
-    run_postings     BOOLEAN     DEFAULT TRUE,
-    run_news         BOOLEAN     DEFAULT TRUE,
-    created_at       TIMESTAMPTZ DEFAULT now()
+    id                       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id               UUID        REFERENCES projects(id) ON DELETE CASCADE,
+    filename                 TEXT        NOT NULL,
+    status                   TEXT        NOT NULL DEFAULT 'uploading',
+    error_message            TEXT,
+    total_companies          INTEGER     DEFAULT 0,
+    names_done               INTEGER     DEFAULT 0,
+    postings_done            INTEGER     DEFAULT 0,
+    news_done                INTEGER     DEFAULT 0,
+    run_postings             BOOLEAN     DEFAULT TRUE,
+    run_news                 BOOLEAN     DEFAULT TRUE,
+    -- Cross-project import fields (type='imported' means this is a ghost session)
+    type                     TEXT        DEFAULT 'normal',
+    source_session_id        UUID        REFERENCES sessions(id) ON DELETE SET NULL,
+    source_project_name      TEXT,
+    source_session_filename  TEXT,
+    created_at               TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX idx_sessions_project ON sessions(project_id);
@@ -59,28 +64,30 @@ CREATE INDEX idx_sessions_project ON sessions(project_id);
 
 -- Companies (parsed from the uploaded Excel/CSV file)
 CREATE TABLE companies (
-    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id        UUID        REFERENCES sessions(id) ON DELETE CASCADE,
-    legal_name        TEXT        NOT NULL,
-    known_names       TEXT[]      DEFAULT '{}',
-    inn               TEXT,
-    kpp               TEXT,
-    ogrn              TEXT,
-    registration_date TEXT,
-    address           TEXT,
-    region            TEXT,
-    website_url       TEXT,
-    revenue           TEXT,
-    employee_count    TEXT,
-    ceo_name          TEXT,
-    ceo_position      TEXT,
-    phone             TEXT,
-    email             TEXT,
-    main_activity     TEXT,
-    raw_data          JSONB,
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id          UUID        REFERENCES sessions(id) ON DELETE CASCADE,
+    legal_name          TEXT        NOT NULL,
+    known_names         TEXT[]      DEFAULT '{}',
+    inn                 TEXT,
+    kpp                 TEXT,
+    ogrn                TEXT,
+    registration_date   TEXT,
+    address             TEXT,
+    region              TEXT,
+    website_url         TEXT,
+    revenue             TEXT,
+    employee_count      TEXT,
+    ceo_name            TEXT,
+    ceo_position        TEXT,
+    phone               TEXT,
+    email               TEXT,
+    main_activity       TEXT,
+    raw_data            JSONB,
     keyword_hit_count   INTEGER     NOT NULL DEFAULT 0,
     keyword_group_count INTEGER     NOT NULL DEFAULT 0,
-    created_at        TIMESTAMPTZ DEFAULT now()
+    -- Cross-project import: points to the source company for ghost companies
+    source_company_id   UUID        REFERENCES companies(id) ON DELETE SET NULL,
+    created_at          TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX idx_companies_session ON companies(session_id);
