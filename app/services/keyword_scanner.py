@@ -79,12 +79,11 @@ def _fetch_all(table: str, column: str, value: str, select: str = "*") -> list[d
     return all_rows
 
 
-def _fetch_all_in(table: str, column: str, values: list[str], select: str = "*") -> list[dict]:
+def _fetch_all_in(table: str, column: str, values: list[str], select: str = "*", batch_size: int = 200) -> list[dict]:
     """Fetch all rows where column IN (values), paginating in batches."""
     if not values:
         return []
     all_rows = []
-    batch_size = 200
     for i in range(0, len(values), batch_size):
         batch_values = values[i: i + batch_size]
         offset = 0
@@ -255,10 +254,18 @@ def scan_project_keywords(
         for p in batch_postings:
             postings_by_company.setdefault(p["company_id"], []).append(p)
 
-        batch_news = _fetch_all_in(
+        batch_news_meta = _fetch_all_in(
             "news_articles", "company_id", effective_fetch_ids,
-            select="company_id, title, snippet, full_text"
+            select="id, company_id, title, snippet"
         )
+        # Fetch full_text in small batches of 10 to avoid response-size timeouts
+        news_ids = [a["id"] for a in batch_news_meta]
+        full_text_rows = _fetch_all_in(
+            "news_articles", "id", news_ids,
+            select="id, full_text", batch_size=10
+        )
+        full_text_map = {r["id"]: r.get("full_text") for r in full_text_rows}
+        batch_news = [{**a, "full_text": full_text_map.get(a["id"])} for a in batch_news_meta]
         news_by_company: dict[str, list] = {}
         for a in batch_news:
             news_by_company.setdefault(a["company_id"], []).append(a)
