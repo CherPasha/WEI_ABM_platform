@@ -613,6 +613,14 @@ def _query_all_rows(table: str, session_id: str) -> list[dict]:
 
 @app.get("/api/sessions/{session_id}/postings/download")
 async def download_postings(session_id: str):
+    # Proxy imported sessions to their source
+    sess = supabase.table("sessions").select("type, source_session_id").eq("id", session_id).execute()
+    if sess.data and sess.data[0].get("type") == "imported":
+        src_id = sess.data[0].get("source_session_id")
+        if not src_id:
+            raise HTTPException(status_code=410, detail="Source session has been deleted")
+        session_id = src_id
+
     rows = _query_all_rows("postings", session_id)
     if not rows:
         return {"error": "No postings found for this session"}
@@ -635,6 +643,14 @@ async def download_postings(session_id: str):
 
 @app.get("/api/sessions/{session_id}/news/download")
 async def download_news(session_id: str):
+    # Proxy imported sessions to their source
+    sess = supabase.table("sessions").select("type, source_session_id").eq("id", session_id).execute()
+    if sess.data and sess.data[0].get("type") == "imported":
+        src_id = sess.data[0].get("source_session_id")
+        if not src_id:
+            raise HTTPException(status_code=410, detail="Source session has been deleted")
+        session_id = src_id
+
     rows = _query_all_rows("news_articles", session_id)
     if not rows:
         return {"error": "No news articles found for this session"}

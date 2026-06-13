@@ -193,3 +193,46 @@ def test_delete_project_blocked_when_dependents():
     with patch("app.main.supabase", sb):
         resp = client.delete("/api/projects/proj-1")
     assert resp.status_code == 409
+
+
+# ──────────────── download proxy ────────────────
+
+def test_download_postings_proxies_for_imported_session():
+    sb = _mock_sb()
+    results = iter([
+        MagicMock(data=[{"type": "imported", "source_session_id": "src-sess"}]),  # session type check
+        # _query_all_rows calls: page 1 returns data, page 2 returns empty
+        MagicMock(data=[{"id": "p1", "company_id": "c1", "title": "Dev", "session_id": "src-sess"}]),
+        MagicMock(data=[]),
+    ])
+    sb.execute.side_effect = lambda: next(results)
+
+    with patch("app.main.supabase", sb):
+        resp = client.get("/api/sessions/imp-sess/postings/download")
+    assert resp.status_code == 200
+    assert "spreadsheet" in resp.headers["content-type"]
+
+
+def test_download_postings_returns_410_for_broken_reference():
+    sb = _mock_sb()
+    sb.execute.return_value = MagicMock(data=[{"type": "imported", "source_session_id": None}])
+
+    with patch("app.main.supabase", sb):
+        resp = client.get("/api/sessions/imp-sess/postings/download")
+    assert resp.status_code == 410
+
+
+def test_download_news_proxies_for_imported_session():
+    sb = _mock_sb()
+    results = iter([
+        MagicMock(data=[{"type": "imported", "source_session_id": "src-sess"}]),  # session type check
+        MagicMock(data=[{"id": "n1", "company_id": "c1", "title": "News", "session_id": "src-sess", "url": "http://x.com", "snippet": "x", "full_text": "x", "published_at": None}]),
+        MagicMock(data=[]),  # pagination done
+        MagicMock(data=[{"id": "c1", "legal_name": "A"}]),  # companies for news
+    ])
+    sb.execute.side_effect = lambda: next(results)
+
+    with patch("app.main.supabase", sb):
+        resp = client.get("/api/sessions/imp-sess/news/download")
+    assert resp.status_code == 200
+    assert "spreadsheet" in resp.headers["content-type"]
