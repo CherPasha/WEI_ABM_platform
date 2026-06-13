@@ -167,6 +167,14 @@
             <!-- ── Upload panel ── -->
             <div id="panel-upload">
 
+                <!-- Broken reference warning banner -->
+                <div id="broken-reference-banner" style="display:none; margin-bottom:1em;">
+                    <p style="background:#fff3cd; border:1px solid #ffc107; border-radius:6px; padding:0.75em 1em; margin:0; font-size:0.9em;">
+                        <strong>Warning:</strong> One or more imported sessions have lost their source data.
+                        Keyword scans will skip those companies and downloads from those sessions are unavailable.
+                    </p>
+                </div>
+
                 <!-- Upload Section -->
                 <article>
                     <h3>Upload File</h3>
@@ -654,9 +662,15 @@
                         <td>${actions}</td>
                     </tr>`;
                 }).join("");
+                checkBrokenReferences(sessions);
             } catch (err) {
                 console.error("History load error:", err);
             }
+        }
+
+        function checkBrokenReferences(sessions) {
+            const hasBroken = sessions.some(s => s.type === "imported" && !s.source_session_id);
+            document.getElementById("broken-reference-banner").style.display = hasBroken ? "block" : "none";
         }
 
         // ---- Resume ----
