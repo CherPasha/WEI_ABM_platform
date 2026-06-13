@@ -125,3 +125,71 @@ def test_completed_sessions_excludes_already_imported():
     ids = [s["id"] for s in resp.json()]
     assert "s1" not in ids
     assert "s2" in ids
+
+
+# ──────────────── dependents endpoints ────────────────
+
+def test_session_dependents_returns_list():
+    sb = _mock_sb()
+    results = iter([
+        MagicMock(data=[{"id": "imp-sess", "project_id": "proj-2", "source_project_name": "P2", "source_session_filename": "a.xlsx"}]),  # dependents query
+        MagicMock(data=[{"name": "Project Two"}]),  # project name lookup
+    ])
+    sb.execute.side_effect = lambda: next(results)
+
+    with patch("app.main.supabase", sb):
+        resp = client.get("/api/sessions/src-sess/dependents")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["project_name"] == "Project Two"
+
+
+def test_session_dependents_returns_empty():
+    sb = _mock_sb()
+    sb.execute.return_value = MagicMock(data=[])
+
+    with patch("app.main.supabase", sb):
+        resp = client.get("/api/sessions/src-sess/dependents")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_delete_session_blocked_when_dependents():
+    sb = _mock_sb()
+    results = iter([
+        MagicMock(data=[{"project_id": "proj-2"}]),  # dependents exist
+        MagicMock(data=[{"name": "Project Two"}]),   # project name
+    ])
+    sb.execute.side_effect = lambda: next(results)
+
+    with patch("app.main.supabase", sb):
+        resp = client.delete("/api/sessions/src-sess")
+    assert resp.status_code == 409
+
+
+def test_delete_session_force_bypasses_guard():
+    sb = _mock_sb()
+    results = iter([
+        MagicMock(data=[{"id": "src-sess"}]),  # delete result
+    ])
+    sb.execute.side_effect = lambda: next(results)
+
+    with patch("app.main.supabase", sb):
+        resp = client.delete("/api/sessions/src-sess?force=true")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
+def test_delete_project_blocked_when_dependents():
+    sb = _mock_sb()
+    results = iter([
+        MagicMock(data=[{"id": "s1"}]),              # project sessions
+        MagicMock(data=[{"project_id": "proj-2"}]),  # dependents for s1
+        MagicMock(data=[{"name": "Project Two"}]),   # dependent project name
+    ])
+    sb.execute.side_effect = lambda: next(results)
+
+    with patch("app.main.supabase", sb):
+        resp = client.delete("/api/projects/proj-1")
+    assert resp.status_code == 409

@@ -169,7 +169,31 @@ async def import_roles(project_id: str, file: UploadFile = File(...)):
 
 
 @app.delete("/api/projects/{project_id}")
-async def delete_project(project_id: str):
+async def delete_project(project_id: str, force: bool = False):
+    if not force:
+        sessions = supabase.table("sessions").select("id").eq("project_id", project_id).execute()
+        session_ids = [s["id"] for s in (sessions.data or [])]
+        dep_project_ids: set[str] = set()
+        for sid in session_ids:
+            deps = (
+                supabase.table("sessions")
+                .select("project_id")
+                .eq("source_session_id", sid)
+                .execute()
+            )
+            for row in (deps.data or []):
+                if row["project_id"] != project_id:
+                    dep_project_ids.add(row["project_id"])
+        if dep_project_ids:
+            names = []
+            for pid in dep_project_ids:
+                p = supabase.table("projects").select("name").eq("id", pid).execute()
+                if p.data:
+                    names.append(p.data[0]["name"])
+            raise HTTPException(
+                status_code=409,
+                detail={"message": "Project sessions are imported by other projects", "projects": names},
+            )
     result = supabase.table("projects").delete().eq("id", project_id).execute()
     if not result.data:
         return {"error": "Project not found"}
@@ -417,6 +441,57 @@ async def list_sessions(project_id: str):
     return result.data
 
 
+@app.get("/api/sessions/{session_id}/dependents")
+async def session_dependents(session_id: str):
+    result = (
+        supabase.table("sessions")
+        .select("id, project_id, source_project_name, source_session_filename")
+        .eq("source_session_id", session_id)
+        .execute()
+    )
+    dependents = []
+    for row in (result.data or []):
+        proj = supabase.table("projects").select("name").eq("id", row["project_id"]).execute()
+        project_name = proj.data[0]["name"] if proj.data else row.get("source_project_name", "Unknown")
+        dependents.append({
+            "project_name": project_name,
+            "session_filename": row.get("source_session_filename", ""),
+        })
+    return dependents
+
+
+@app.get("/api/projects/{project_id}/dependents")
+async def project_dependents(project_id: str):
+    sessions_result = (
+        supabase.table("sessions")
+        .select("id, filename")
+        .eq("project_id", project_id)
+        .execute()
+    )
+    session_ids = [s["id"] for s in (sessions_result.data or [])]
+    if not session_ids:
+        return []
+
+    all_dependents = []
+    for sid in session_ids:
+        src_filename = next((s["filename"] for s in (sessions_result.data or []) if s["id"] == sid), "")
+        deps = (
+            supabase.table("sessions")
+            .select("project_id, source_session_filename")
+            .eq("source_session_id", sid)
+            .execute()
+        )
+        for row in (deps.data or []):
+            proj = supabase.table("projects").select("name").eq("id", row["project_id"]).execute()
+            project_name = proj.data[0]["name"] if proj.data else "Unknown"
+            all_dependents.append({
+                "project_name": project_name,
+                "source_session_filename": src_filename,
+                "session_filename": row.get("source_session_filename", ""),
+            })
+    return all_dependents
+
+
 # ──────────────────────── Session Status ────────────────────────
 
 
@@ -485,7 +560,25 @@ async def delete_all_project_sessions(project_id: str):
 
 
 @app.delete("/api/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, force: bool = False):
+    if not force:
+        deps = (
+            supabase.table("sessions")
+            .select("project_id")
+            .eq("source_session_id", session_id)
+            .execute()
+        )
+        if deps.data:
+            project_ids = list({r["project_id"] for r in deps.data})
+            names = []
+            for pid in project_ids:
+                p = supabase.table("projects").select("name").eq("id", pid).execute()
+                if p.data:
+                    names.append(p.data[0]["name"])
+            raise HTTPException(
+                status_code=409,
+                detail={"message": "Session is imported by other projects", "projects": names},
+            )
     result = supabase.table("sessions").delete().eq("id", session_id).execute()
     if not result.data:
         return {"error": "Session not found"}
