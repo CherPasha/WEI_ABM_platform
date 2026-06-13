@@ -256,6 +256,122 @@ async def update_contact_scan_settings(project_id: str, body: ContactScanSetting
 # ──────────────────────── Upload (scoped to project) ────────────────────────
 
 
+@app.get("/api/projects/{project_id}/sessions/completed")
+async def list_completed_sessions(project_id: str, importing_into: Optional[str] = None):
+    result = (
+        supabase.table("sessions")
+        .select("id, filename, created_at, total_companies")
+        .eq("project_id", project_id)
+        .eq("status", "completed")
+        .order("created_at", desc=True)
+        .execute()
+    )
+    sessions = result.data or []
+
+    if importing_into:
+        already = (
+            supabase.table("sessions")
+            .select("source_session_id")
+            .eq("project_id", importing_into)
+            .eq("type", "imported")
+            .execute()
+        )
+        imported_ids = {r["source_session_id"] for r in (already.data or []) if r.get("source_session_id")}
+        sessions = [s for s in sessions if s["id"] not in imported_ids]
+
+    return sessions
+
+
+@app.post("/api/projects/{project_id}/sessions/import")
+async def import_session(project_id: str, body: ImportSession):
+    # 1. Validate source session
+    src_result = (
+        supabase.table("sessions")
+        .select("id, project_id, filename, status, total_companies")
+        .eq("id", body.source_session_id)
+        .execute()
+    )
+    if not src_result.data:
+        raise HTTPException(status_code=404, detail="Source session not found")
+    src = src_result.data[0]
+
+    if src["project_id"] == project_id:
+        raise HTTPException(status_code=400, detail="Cannot import from the same project")
+
+    if src["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Source session must be completed")
+
+    # 2. Duplicate guard
+    dup = (
+        supabase.table("sessions")
+        .select("id")
+        .eq("project_id", project_id)
+        .eq("source_session_id", body.source_session_id)
+        .execute()
+    )
+    if dup.data:
+        raise HTTPException(status_code=409, detail="This session is already imported into this project")
+
+    # 3. Snapshot source project name
+    proj_result = (
+        supabase.table("projects")
+        .select("name")
+        .eq("id", src["project_id"])
+        .execute()
+    )
+    source_project_name = proj_result.data[0]["name"] if proj_result.data else "Unknown"
+
+    # 4. Create imported session
+    imported = supabase.table("sessions").insert({
+        "project_id": project_id,
+        "filename": src["filename"],
+        "status": "completed",
+        "type": "imported",
+        "source_session_id": body.source_session_id,
+        "source_project_name": source_project_name,
+        "source_session_filename": src["filename"],
+        "total_companies": src["total_companies"],
+    }).execute()
+    imported_session_id = imported.data[0]["id"]
+
+    # 5. Batch-copy company metadata (no postings/news)
+    all_source_companies: list[dict] = []
+    offset = 0
+    while True:
+        rows = (
+            supabase.table("companies")
+            .select("id, legal_name, inn, kpp, ogrn, website_url, ceo_name, revenue, known_names")
+            .eq("session_id", body.source_session_id)
+            .range(offset, offset + 999)
+            .execute()
+        ).data
+        all_source_companies.extend(rows)
+        if len(rows) < 1000:
+            break
+        offset += 1000
+
+    batch_size = 200
+    for i in range(0, len(all_source_companies), batch_size):
+        batch = all_source_companies[i:i + batch_size]
+        supabase.table("companies").insert([
+            {
+                "session_id": imported_session_id,
+                "source_company_id": c["id"],
+                "legal_name": c.get("legal_name"),
+                "inn": c.get("inn"),
+                "kpp": c.get("kpp"),
+                "ogrn": c.get("ogrn"),
+                "website_url": c.get("website_url"),
+                "ceo_name": c.get("ceo_name"),
+                "revenue": c.get("revenue"),
+                "known_names": c.get("known_names"),
+            }
+            for c in batch
+        ]).execute()
+
+    return imported.data[0]
+
+
 @app.post("/api/projects/{project_id}/sessions/upload")
 async def upload_file(
     project_id: str,
