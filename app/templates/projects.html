@@ -68,7 +68,7 @@
                     return `<article class="project-card" onclick="window.location='/projects/${p.id}'">
                         <div class="project-header">
                             <h4 style="margin:0;">${escapeHtml(p.name)}</h4>
-                            <a href="#" class="delete" onclick="deleteProject(event, '${p.id}')">Delete</a>
+                            <a href="#" class="delete" onclick="deleteProject(event, '${p.id}', ${JSON.stringify(p.name)})">Delete</a>
                         </div>
                         <span class="project-date">Created ${date}</span>
                         ${roles ? `<br><span style="font-size:0.85em; color:var(--pico-muted-color);">Roles: ${roles}</span>` : ""}
@@ -95,11 +95,26 @@
             loadProjects();
         });
 
-        async function deleteProject(e, projectId) {
+        async function deleteProject(e, projectId, projectName) {
             e.stopPropagation();
             e.preventDefault();
-            if (!confirm("Delete this project and ALL its files/data?")) return;
-            await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+            try {
+                const depsResp = await fetch(`/api/projects/${projectId}/dependents`);
+                const deps = await depsResp.json();
+
+                if (deps.length) {
+                    const depNames = [...new Set(deps.map(d => d.project_name))].join(", ");
+                    if (!confirm(`Project "${projectName}" is imported by: ${depNames}.\n\nDeleting will break their imported sessions — those companies will be skipped in keyword scans and downloads will stop working.\n\nContinue?`)) return;
+                    await fetch(`/api/projects/${projectId}?force=true`, { method: "DELETE" });
+                } else {
+                    if (!confirm(`Delete project "${projectName}" and ALL its files/data?`)) return;
+                    await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+                }
+            } catch (err) {
+                console.error("Failed to check dependents:", err);
+                if (!confirm(`Delete project "${projectName}" and ALL its files/data?`)) return;
+                await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+            }
             loadProjects();
         }
 
