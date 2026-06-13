@@ -599,6 +599,28 @@
                 tbody.innerHTML = sessions.map(s => {
                     const date = s.created_at ? new Date(s.created_at).toLocaleString() : "-";
                     const total = s.total_companies || 0;
+
+                    // ---- Imported session row ----
+                    if (s.type === "imported") {
+                        const isBroken = !s.source_session_id;
+                        const badge = isBroken
+                            ? `<span class="status-badge status-failed">Source deleted</span>`
+                            : `<span class="status-badge status-completed">Reference active</span>`;
+                        const sourceLabel = escapeHtml(s.source_project_name || "Unknown") +
+                            " &middot; " + escapeHtml(s.source_session_filename || s.filename);
+                        const dlLinks = !isBroken
+                            ? `<a href="/api/sessions/${s.id}/postings/download">Postings</a> | <a href="/api/sessions/${s.id}/news/download">News</a> | `
+                            : `<span style="color:var(--pico-muted-color); font-size:0.85em;" title="Source deleted">Downloads unavailable</span> | `;
+                        const actions = dlLinks + `<a href="#" onclick="deleteSession('${s.id}'); return false;" style="color:var(--pico-color-red-500)">Delete</a>`;
+                        return `<tr style="background: #f8f9fa;">
+                            <td><em>${sourceLabel}</em> ${badge}<br><span style="font-size:0.8em; color:var(--pico-muted-color);">${s.total_companies || 0} companies</span></td>
+                            <td colspan="3" style="color:var(--pico-muted-color); font-size:0.85em;">—</td>
+                            <td>${date}</td>
+                            <td>${actions}</td>
+                        </tr>`;
+                    }
+                    // ---- end imported session row ----
+
                     const isComplete = s.status === "completed";
                     const isActive = ["uploading", "parsing", "resolving_names", "finding_postings", "finding_news", "resuming", "cancelling"].includes(s.status);
                     const canResume = !isComplete && !isActive && total > 0 && s.status !== "uploading";
@@ -1255,7 +1277,7 @@
         }
 
         function updateExportButtons(sessions, scanStatus, contactScan) {
-            const completedSession = sessions.find(s => s.status === 'completed');
+            const completedSession = sessions.find(s => s.status === 'completed' && (s.type !== 'imported' || s.source_session_id));
 
             const postingsBtn  = document.getElementById('dl-export-postings');
             const postingsHint = document.getElementById('dl-export-postings-hint');
