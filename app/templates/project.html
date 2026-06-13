@@ -175,39 +175,51 @@
                     </p>
                 </div>
 
-                <!-- Upload Section -->
-                <article>
-                    <h3>Upload File</h3>
-                    <form id="upload-form">
-                        <input type="file" id="file-input" accept=".xlsx,.xls,.csv" required>
+                <!-- Upload + Import side by side -->
+                <div style="display:grid; grid-template-columns:1fr auto 1fr; gap:0; align-items:stretch;">
 
-                        <fieldset style="margin-top:0.8em;">
-                            <legend style="font-size:0.9em; font-weight:600;">Select processing stages:</legend>
-                            <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
-                                <input type="checkbox" id="chk-postings" checked style="margin:0;">
-                                Find job postings (hh.ru)
-                                <span style="color:var(--pico-muted-color); font-size:0.85em;">~5 sec/company</span>
-                            </label>
-                            <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
-                                <input type="checkbox" id="chk-news" checked style="margin:0;">
-                                Find news (Yandex)
-                                <span style="color:var(--pico-muted-color); font-size:0.85em;">~5 sec/company</span>
-                            </label>
-                        </fieldset>
+                    <!-- Upload File -->
+                    <article style="margin:0; border-radius: var(--pico-border-radius) 0 0 var(--pico-border-radius);">
+                        <h3>Upload File</h3>
+                        <form id="upload-form">
+                            <input type="file" id="file-input" accept=".xlsx,.xls,.csv" required>
 
-                        <button type="submit" id="upload-btn" style="margin-top:0.5em;">Upload &amp; Process</button>
-                    </form>
-                    <p id="error-msg"></p>
-                </article>
+                            <fieldset style="margin-top:0.8em;">
+                                <legend style="font-size:0.9em; font-weight:600;">Select processing stages:</legend>
+                                <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
+                                    <input type="checkbox" id="chk-postings" checked style="margin:0;">
+                                    Find job postings (hh.ru)
+                                    <span style="color:var(--pico-muted-color); font-size:0.85em;">~5 sec/company</span>
+                                </label>
+                                <label style="display:flex; align-items:center; gap:0.5em; margin-bottom:0.3em; font-size:0.9em;">
+                                    <input type="checkbox" id="chk-news" checked style="margin:0;">
+                                    Find news (Yandex)
+                                    <span style="color:var(--pico-muted-color); font-size:0.85em;">~5 sec/company</span>
+                                </label>
+                            </fieldset>
 
-                <!-- Import from project -->
-                <article>
-                    <h3>Import from Another Project</h3>
-                    <p style="font-size:0.85em; color:var(--pico-muted-color); margin-bottom:0.75em;">
-                        Reference companies (with their postings and news) from a completed session in another project. Keywords and roles are not imported.
-                    </p>
-                    <button class="secondary" onclick="openImportModal()">Import from project</button>
-                </article>
+                            <button type="submit" id="upload-btn" style="margin-top:0.5em;">Upload &amp; Process</button>
+                        </form>
+                        <p id="error-msg"></p>
+                    </article>
+
+                    <!-- OR divider -->
+                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 1.25em;">
+                        <div style="flex:1; width:1px; background:var(--pico-muted-border-color);"></div>
+                        <span style="font-size:1.1em; font-weight:700; color:var(--pico-muted-color); padding:0.6em 0; letter-spacing:0.05em;">OR</span>
+                        <div style="flex:1; width:1px; background:var(--pico-muted-border-color);"></div>
+                    </div>
+
+                    <!-- Import from project -->
+                    <article style="margin:0; border-radius: 0 var(--pico-border-radius) var(--pico-border-radius) 0; display:flex; flex-direction:column; justify-content:center;">
+                        <h3>Import from Another Project</h3>
+                        <p style="font-size:0.85em; color:var(--pico-muted-color); margin-bottom:0.75em;">
+                            Reference companies (with their postings and news) from a completed session in another project. Keywords and roles are not imported.
+                        </p>
+                        <button class="secondary" onclick="openImportModal()">Import from project</button>
+                    </article>
+
+                </div>
 
                 <!-- Import modal -->
                 <dialog id="import-modal">
