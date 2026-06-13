@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Callable
 
+import httpx
 import pandas as pd
 
 from app.database import supabase
@@ -56,18 +57,42 @@ def _is_checkpointed(
     return False
 
 
+_RETRY_DELAYS = (2, 5)  # seconds to wait before retry attempts 1 and 2
+
+
+def _execute(builder, max_retries: int = 2):
+    """Execute a PostgREST query builder, retrying on connection-level failures.
+
+    postgrest's send_with_retry only retries on HTTP 503/520 (Cloudflare errors).
+    It does not catch httpx.RemoteProtocolError (TCP disconnect / H2 GOAWAY),
+    so we add that retry layer here.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return builder.execute()
+        except httpx.RemoteProtocolError:
+            if attempt < max_retries:
+                delay = _RETRY_DELAYS[attempt]
+                logger.warning(
+                    "Supabase connection dropped (attempt %d/%d), retrying in %ds",
+                    attempt + 1, max_retries + 1, delay,
+                )
+                time.sleep(delay)
+            else:
+                raise
+
+
 def _fetch_all(table: str, column: str, value: str, select: str = "*") -> list[dict]:
     """Fetch all rows matching column=value, paginating through 1000-row limit."""
     all_rows = []
     offset = 0
     page_size = 1000
     while True:
-        result = (
+        result = _execute(
             supabase.table(table)
             .select(select)
             .eq(column, value)
             .range(offset, offset + page_size - 1)
-            .execute()
         )
         rows = result.data
         if not rows:
@@ -89,12 +114,11 @@ def _fetch_all_in(table: str, column: str, values: list[str], select: str = "*",
         offset = 0
         page_size = 1000
         while True:
-            result = (
+            result = _execute(
                 supabase.table(table)
                 .select(select)
                 .in_(column, batch_values)
                 .range(offset, offset + page_size - 1)
-                .execute()
             )
             rows = result.data
             if not rows:
