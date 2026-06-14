@@ -829,7 +829,7 @@
                     container.innerHTML = '<p style="color:var(--pico-muted-color); font-size:0.9em;">No stop words yet.</p>';
                     return;
                 }
-                container.innerHTML = '<div class="kw-list">' + words.map(w =>
+                container.innerHTML = '<div>' + words.map(w =>
                     `<span class="kw-tag">${escapeHtml(w.word)}<button onclick="deleteStopWord('${escapeHtml(String(w.id))}')" title="Remove">&times;</button></span>`
                 ).join("") + '</div>';
             } catch (err) {
