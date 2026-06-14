@@ -391,13 +391,18 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
             row[group["name"]] = group_kw_count
             if group_kw_count > 0:
                 total_groups += 1
-        row["Total Keywords Found"] = total_kw
+        total_matches = sum(
+            company["results"].get(kw, {}).get("count", 0)
+            for g in groups for kw in g["keywords"]
+        )
+        row["Unique Keywords Found"] = total_kw
+        row["Total Keyword Matches"] = total_matches
         row["Groups With Hits"] = total_groups
         row["Keywords Found"] = ", ".join(found_kw_names)
         qs_rows.append(row)
 
     qs_df = pd.DataFrame(qs_rows)
-    qs_cols = ["Company", "INN", "Total Keywords Found", "Groups With Hits", "Keywords Found"] + [
+    qs_cols = ["Company", "INN", "Unique Keywords Found", "Total Keyword Matches", "Groups With Hits", "Keywords Found"] + [
         g["name"] for g in groups
     ]
     qs_cols = [c for c in qs_cols if c in qs_df.columns]
@@ -480,12 +485,14 @@ def derive_quick_summary_df(summary_df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for _, r in summary_df.iterrows():
         total_kw = int(sum(1 for c in kw_cols if r[c] > 0))
+        total_matches = int(sum(r[c] for c in kw_cols))
         total_groups = int(sum(1 for c in total_cols if r[c] > 0))
         found_kws = [c for c in kw_cols if r[c] > 0]
         row: dict = {
             "Company": r["Company"],
             "INN": str(r["INN"]),
-            "Total Keywords Found": total_kw,
+            "Unique Keywords Found": total_kw,
+            "Total Keyword Matches": total_matches,
             "Groups With Hits": total_groups,
             "Keywords Found": ", ".join(found_kws),
         }
@@ -495,6 +502,6 @@ def derive_quick_summary_df(summary_df: pd.DataFrame) -> pd.DataFrame:
         rows.append(row)
 
     group_names = [tc[: -len(" (total)")] for tc in total_cols]
-    cols = ["Company", "INN", "Total Keywords Found", "Groups With Hits", "Keywords Found"] + group_names
+    cols = ["Company", "INN", "Unique Keywords Found", "Total Keyword Matches", "Groups With Hits", "Keywords Found"] + group_names
     df = pd.DataFrame(rows)
     return df[[c for c in cols if c in df.columns]]
