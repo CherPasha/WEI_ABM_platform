@@ -969,6 +969,12 @@
             refreshTabStates();
         }
 
+        async function deleteAntiKeyword(keywordId) {
+            await fetch(`/api/keywords/${keywordId}`, { method: "DELETE" });
+            loadAntiKeywordGroups();
+            refreshTabStates();
+        }
+
         async function importKeywordFile(input) {
             const file = input.files[0];
             if (!file) return;
@@ -1016,7 +1022,7 @@
 
                 container.innerHTML = groups.map(g => {
                     const kwTags = g.keywords.map(k =>
-                        `<span class="kw-tag">${escapeHtml(k.keyword)}<button onclick="deleteKeyword('${k.id}')" title="Remove">&times;</button></span>`
+                        `<span class="kw-tag">${escapeHtml(k.keyword)}<button onclick="deleteAntiKeyword('${k.id}')" title="Remove">&times;</button></span>`
                     ).join("");
 
                     return `<details class="kw-group" open>
