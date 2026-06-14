@@ -1267,8 +1267,11 @@ def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
 
         summary_df = xf.parse("Summary")
         details_df = xf.parse("Details") if "Details" in xf.sheet_names else pd.DataFrame()
+        anti_summary_df = xf.parse("Anti_Summary") if "Anti_Summary" in xf.sheet_names else pd.DataFrame()
+        anti_details_df = xf.parse("Anti_Details") if "Anti_Details" in xf.sheet_names else pd.DataFrame()
 
         groups = new_scan_result["groups"]
+        anti_groups = new_scan_result.get("anti_groups", [])
 
         def _dedup_key(inn: str, name: str) -> str:
             inn = (inn or "").strip()
@@ -1279,21 +1282,26 @@ def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
             for c in new_scan_result["companies"]
         }
 
-        # Reconstruct old companies from Summary sheet
-        old_companies = []
         kw_cols = [
             c for c in summary_df.columns
             if c not in ("Company", "INN") and not str(c).endswith(" (total)")
         ]
+        anti_kw_cols = [
+            c for c in anti_summary_df.columns
+            if c not in ("Company", "INN") and not str(c).endswith(" (total)")
+        ] if not anti_summary_df.empty else []
+
+        # Reconstruct old companies from Summary (and Anti_Summary) sheets
+        old_companies = []
         for _, row_s in summary_df.iterrows():
             inn = str(row_s.get("INN", "") or "")
             company_name = str(row_s.get("Company", "") or "")
             if _dedup_key(inn, company_name) in new_keys:
                 continue  # already in new results; skip
+
             results = {}
             for kw in kw_cols:
                 count = int(row_s.get(kw, 0) or 0)
-                # Reconstruct sentences from Details sheet
                 sentences = []
                 if not details_df.empty and "Keyword" in details_df.columns:
                     detail_rows = details_df[
@@ -1307,14 +1315,39 @@ def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
                             if part:
                                 sentences.append({"source": "unknown", "field": "", "title": "", "sentence": part})
                 results[str(kw)] = {"count": count, "sentences": sentences}
+
+            anti_results = {}
+            if anti_kw_cols:
+                anti_row = None
+                if not anti_summary_df.empty and "INN" in anti_summary_df.columns:
+                    matches = anti_summary_df[anti_summary_df["INN"].astype(str) == inn]
+                    if not matches.empty:
+                        anti_row = matches.iloc[0]
+                for kw in anti_kw_cols:
+                    count = int(anti_row.get(kw, 0) or 0) if anti_row is not None else 0
+                    sentences = []
+                    if not anti_details_df.empty and "Keyword" in anti_details_df.columns:
+                        detail_rows = anti_details_df[
+                            (anti_details_df["INN"].astype(str) == inn) &
+                            (anti_details_df["Keyword"].astype(str) == str(kw))
+                        ]
+                        if not detail_rows.empty:
+                            raw = str(detail_rows.iloc[0].get("Sentences", "") or "")
+                            for part in raw.split("\n\n"):
+                                part = part.strip()
+                                if part:
+                                    sentences.append({"source": "unknown", "field": "", "title": "", "sentence": part})
+                    anti_results[str(kw)] = {"count": count, "sentences": sentences}
+
             old_companies.append({
-                "name": str(row_s.get("Company", "") or ""),
+                "name": company_name,
                 "inn": inn,
                 "results": results,
+                "anti_results": anti_results,
             })
 
         merged_companies = old_companies + new_scan_result["companies"]
-        return {"groups": groups, "companies": merged_companies}
+        return {"groups": groups, "anti_groups": anti_groups, "companies": merged_companies}
 
     except Exception:
         _logger.exception("Failed to merge resume results for project %s; using partial results", project_id)
