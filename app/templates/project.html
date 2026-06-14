@@ -385,6 +385,20 @@
                     <div id="keyword-groups-container"></div>
                 </article>
 
+            <!-- Keyword group modal -->
+            <dialog id="kw-group-modal">
+                <article>
+                    <header>
+                        <button aria-label="Close" rel="prev" onclick="closeKwGroupModal()"></button>
+                        <h3 id="kw-group-modal-title"></h3>
+                    </header>
+                    <div id="kw-group-modal-body"></div>
+                    <footer>
+                        <button class="secondary" onclick="closeKwGroupModal()">Close</button>
+                    </footer>
+                </article>
+            </dialog>
+
             </div><!-- /panel-keywords -->
 
             <!-- ── Roles panel ── -->
@@ -945,22 +959,9 @@
             refreshTabStates();
         }
 
-        async function addKeyword(groupId) {
-            const input = document.getElementById(`kw-input-${groupId}`);
-            const keyword = input.value.trim();
-            if (!keyword) return;
-            await fetch(`/api/keyword-groups/${groupId}/keywords`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ keyword }),
-            });
-            input.value = "";
-            loadKeywordGroups();
-            refreshTabStates();
-        }
-
         async function deleteKeyword(keywordId) {
             await fetch(`/api/keywords/${keywordId}`, { method: "DELETE" });
+            if (activeKwGroupId) await renderKwGroupModal(activeKwGroupId);
             loadKeywordGroups();
             refreshTabStates();
         }
@@ -1110,6 +1111,77 @@
 
         // ---- Keyword Scan Status ----
         let kwScanPollInterval = null;
+
+        let activeKwGroupId = null;
+
+        function openKwGroupModal(btn) {
+            activeKwGroupId = btn.dataset.groupId;
+            document.getElementById("kw-group-modal-title").textContent = btn.dataset.groupName;
+            renderKwGroupModal(activeKwGroupId);
+            document.getElementById("kw-group-modal").showModal();
+        }
+
+        function closeKwGroupModal() {
+            activeKwGroupId = null;
+            document.getElementById("kw-group-modal").close();
+        }
+
+        async function renderKwGroupModal(groupId) {
+            const body = document.getElementById("kw-group-modal-body");
+            try {
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/keyword-groups`);
+                const groups = await resp.json();
+                const group = groups.find(g => String(g.id) === String(groupId));
+                if (!group) { body.innerHTML = '<p>Group not found.</p>'; return; }
+
+                const rows = group.keywords.length
+                    ? group.keywords.map(k => `
+                        <tr>
+                            <td>${escapeHtml(k.keyword)}</td>
+                            <td style="width:2em; text-align:right;">
+                                <button onclick="deleteKeyword('${k.id}')" title="Remove"
+                                        style="background:none;border:none;cursor:pointer;color:var(--pico-color-red-500);padding:0;margin:0;width:auto;line-height:1;">&times;</button>
+                            </td>
+                        </tr>`).join("")
+                    : `<tr><td colspan="2" style="color:var(--pico-muted-color);font-size:0.9em;">No keywords yet.</td></tr>`;
+
+                body.innerHTML = `<table>
+                    <tbody>
+                        ${rows}
+                        <tr>
+                            <td><input type="text" id="kw-modal-input" placeholder="Add keyword..."
+                                       style="margin:0;"
+                                       onkeydown="if(event.key==='Enter'){addKeywordFromModal('${groupId}')}"></td>
+                            <td style="width:5em;">
+                                <button onclick="addKeywordFromModal('${groupId}')"
+                                        style="margin:0;padding:0.3em 0.8em;font-size:0.85em;white-space:nowrap;">Add</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>`;
+
+                document.getElementById("kw-modal-input").focus();
+            } catch (err) {
+                console.error("Failed to render keyword modal:", err);
+                body.innerHTML = '<p style="color:var(--pico-color-red-500);">Failed to load keywords.</p>';
+            }
+        }
+
+        async function addKeywordFromModal(groupId) {
+            const input = document.getElementById("kw-modal-input");
+            const keyword = input.value.trim();
+            if (!keyword) return;
+            const resp = await fetch(`/api/keyword-groups/${groupId}/keywords`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ keyword }),
+            });
+            if (resp.ok) {
+                await renderKwGroupModal(groupId);
+                loadKeywordGroups();
+                refreshTabStates();
+            }
+        }
 
         function updateKeywordScanPanel(data) {
             const panel = document.getElementById("kw-scan-status");
