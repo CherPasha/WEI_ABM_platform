@@ -1556,7 +1556,7 @@
 
         async function refreshTabStates() {
             try {
-                const [sessionsResp, stopWordsResp, scanStatusResp, projectResp, contactScanResp, kwGroupsResp] =
+                const [sessionsResp, stopWordsResp, scanStatusResp, projectResp, contactScanResp, kwGroupsResp, antiKwGroupsResp] =
                     await Promise.all([
                         fetch(`/api/projects/${PROJECT_ID}/sessions`),
                         fetch(`/api/projects/${PROJECT_ID}/stop-words`),
@@ -1564,20 +1564,22 @@
                         fetch(`/api/projects/${PROJECT_ID}/details`),
                         fetch(`/api/projects/${PROJECT_ID}/contact-scan/latest/status`),
                         fetch(`/api/projects/${PROJECT_ID}/keyword-groups`),
+                        fetch(`/api/projects/${PROJECT_ID}/anti-keyword-groups`),
                     ]);
 
                 if (!sessionsResp.ok || !stopWordsResp.ok || !scanStatusResp.ok ||
-                    !projectResp.ok || !contactScanResp.ok || !kwGroupsResp.ok) {
+                    !projectResp.ok || !contactScanResp.ok || !kwGroupsResp.ok || !antiKwGroupsResp.ok) {
                     console.error('refreshTabStates: one or more API calls failed');
                     return;
                 }
 
-                const sessions    = await sessionsResp.json();
-                const stopWords   = await stopWordsResp.json();
-                const scanStatus  = await scanStatusResp.json();
-                const project     = await projectResp.json();
-                const contactScan = await contactScanResp.json();
-                const kwGroups    = await kwGroupsResp.json();
+                const sessions      = await sessionsResp.json();
+                const stopWords     = await stopWordsResp.json();
+                const scanStatus    = await scanStatusResp.json();
+                const project       = await projectResp.json();
+                const contactScan   = await contactScanResp.json();
+                const kwGroups      = await kwGroupsResp.json();
+                const antiKwGroups  = await antiKwGroupsResp.json();
 
                 // Tab 1 — Upload
                 const hasCompleted  = sessions.some(s => s.status === 'completed');
@@ -1591,7 +1593,11 @@
                 const hasKeywords = kwGroups.some(g => g.keywords && g.keywords.length > 0);
                 setTabState('keywords', scanStatus.status === 'done' ? 'green' : hasKeywords ? 'yellow' : '');
 
-                // Tab 4 — Roles
+                // Tab 4 — Анти ключевые слова
+                const hasAntiKeywords = antiKwGroups.some(g => g.keywords && g.keywords.length > 0);
+                setTabState('antikeywords', hasAntiKeywords ? 'yellow' : '');
+
+                // Tab 5 — Roles
                 const hasRoles          = (project.target_roles || []).length > 0;
                 const contactScanDone   = contactScan.status === 'completed';
                 setTabState('roles', contactScanDone ? 'green' : hasRoles ? 'yellow' : '');
