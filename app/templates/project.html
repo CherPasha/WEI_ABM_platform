@@ -54,8 +54,9 @@
 
         #tab-upload:checked    ~ #panel-upload    { display: block; }
         #tab-stopwords:checked ~ #panel-stopwords { display: block; }
-        #tab-keywords:checked  ~ #panel-keywords  { display: block; }
-        #tab-roles:checked     ~ #panel-roles     { display: block; }
+        #tab-keywords:checked      ~ #panel-keywords      { display: block; }
+        #tab-antikeywords:checked  ~ #panel-antikeywords  { display: block; }
+        #tab-roles:checked         ~ #panel-roles         { display: block; }
         #tab-export:checked    ~ #panel-export    { display: block; }
 
         /* ── Step bar ── */
@@ -99,19 +100,21 @@
         }
 
         /* Active tab — primary circle when no state class */
-        #tab-upload:checked    ~ .tab-nav label[for="tab-upload"]:not(.tab-yellow):not(.tab-green) .step-num,
-        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"]:not(.tab-yellow):not(.tab-green) .step-num,
-        #tab-keywords:checked  ~ .tab-nav label[for="tab-keywords"]:not(.tab-yellow):not(.tab-green) .step-num,
-        #tab-roles:checked     ~ .tab-nav label[for="tab-roles"]:not(.tab-yellow):not(.tab-green) .step-num,
-        #tab-export:checked    ~ .tab-nav label[for="tab-export"] .step-num {
+        #tab-upload:checked        ~ .tab-nav label[for="tab-upload"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-stopwords:checked     ~ .tab-nav label[for="tab-stopwords"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-keywords:checked      ~ .tab-nav label[for="tab-keywords"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-antikeywords:checked  ~ .tab-nav label[for="tab-antikeywords"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-roles:checked         ~ .tab-nav label[for="tab-roles"]:not(.tab-yellow):not(.tab-green) .step-num,
+        #tab-export:checked        ~ .tab-nav label[for="tab-export"] .step-num {
             background: var(--pico-primary);
             color: white;
         }
-        #tab-upload:checked    ~ .tab-nav label[for="tab-upload"]:not(.tab-yellow):not(.tab-green),
-        #tab-stopwords:checked ~ .tab-nav label[for="tab-stopwords"]:not(.tab-yellow):not(.tab-green),
-        #tab-keywords:checked  ~ .tab-nav label[for="tab-keywords"]:not(.tab-yellow):not(.tab-green),
-        #tab-roles:checked     ~ .tab-nav label[for="tab-roles"]:not(.tab-yellow):not(.tab-green),
-        #tab-export:checked    ~ .tab-nav label[for="tab-export"] {
+        #tab-upload:checked        ~ .tab-nav label[for="tab-upload"]:not(.tab-yellow):not(.tab-green),
+        #tab-stopwords:checked     ~ .tab-nav label[for="tab-stopwords"]:not(.tab-yellow):not(.tab-green),
+        #tab-keywords:checked      ~ .tab-nav label[for="tab-keywords"]:not(.tab-yellow):not(.tab-green),
+        #tab-antikeywords:checked  ~ .tab-nav label[for="tab-antikeywords"]:not(.tab-yellow):not(.tab-green),
+        #tab-roles:checked         ~ .tab-nav label[for="tab-roles"]:not(.tab-yellow):not(.tab-green),
+        #tab-export:checked        ~ .tab-nav label[for="tab-export"] {
             color: var(--pico-primary);
             font-weight: 700;
         }
@@ -156,20 +159,23 @@
         <div class="tabs">
             <input type="radio" id="tab-upload"    name="tab" checked>
             <input type="radio" id="tab-stopwords" name="tab">
-            <input type="radio" id="tab-keywords"  name="tab">
-            <input type="radio" id="tab-roles"     name="tab">
+            <input type="radio" id="tab-keywords"     name="tab">
+            <input type="radio" id="tab-antikeywords" name="tab">
+            <input type="radio" id="tab-roles"        name="tab">
             <input type="radio" id="tab-export"    name="tab">
 
             <nav class="tab-nav">
-                <label for="tab-upload">   <span class="step-num">1</span> Upload</label>
+                <label for="tab-upload">        <span class="step-num">1</span> Upload</label>
                 <span class="step-arrow" aria-hidden="true">›</span>
-                <label for="tab-stopwords"><span class="step-num">2</span> Stop Words</label>
+                <label for="tab-stopwords">     <span class="step-num">2</span> Stop Words</label>
                 <span class="step-arrow" aria-hidden="true">›</span>
-                <label for="tab-keywords"> <span class="step-num">3</span> Keywords</label>
+                <label for="tab-keywords">      <span class="step-num">3</span> Keywords</label>
                 <span class="step-arrow" aria-hidden="true">›</span>
-                <label for="tab-roles">    <span class="step-num">4</span> Roles</label>
+                <label for="tab-antikeywords">  <span class="step-num">4</span> Анти ключевые слова</label>
                 <span class="step-arrow" aria-hidden="true">›</span>
-                <label for="tab-export">   <span class="step-num">5</span> Export</label>
+                <label for="tab-roles">         <span class="step-num">5</span> Roles</label>
+                <span class="step-arrow" aria-hidden="true">›</span>
+                <label for="tab-export">        <span class="step-num">6</span> Export</label>
             </nav>
 
             <!-- ── Upload panel ── -->
@@ -366,6 +372,29 @@
                 </article>
 
             </div><!-- /panel-keywords -->
+
+            <!-- ── Anti-Keywords panel ── -->
+            <div id="panel-antikeywords">
+
+                <article>
+                    <h3>Анти ключевые слова</h3>
+                    <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
+                        <input type="text" id="new-anti-group-name" placeholder="Group name (e.g. Риски)" style="margin:0;">
+                        <button onclick="addAntiKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
+                        <button id="import-anti-kw-btn" class="secondary" style="margin:0; white-space:nowrap;"
+                                onclick="document.getElementById('anti-kw-import-input').click()">Import from file</button>
+                        <input type="file" id="anti-kw-import-input" accept=".xlsx" style="display:none"
+                               onchange="importAntiKeywordFile(this)">
+                        <span id="anti-kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
+                    </div>
+                    <div id="anti-keyword-groups-container"></div>
+                    <p style="font-size:0.85em; color:var(--pico-muted-color); margin-top:1em;">
+                        Anti-keywords are scanned as part of the keyword scan (run from the Keywords tab).
+                        Results appear on the Anti_Summary and Anti_Details sheets in the download.
+                    </p>
+                </article>
+
+            </div><!-- /panel-antikeywords -->
 
             <!-- ── Roles panel ── -->
             <div id="panel-roles">
