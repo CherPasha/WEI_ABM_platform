@@ -43,7 +43,7 @@ from unittest.mock import patch, MagicMock
 def _make_fetch_all_side_effect():
     def fake(table, column, value, select="*"):
         if table == "keyword_groups":
-            return [{"id": "g1", "name": "Tech"}]
+            return [{"id": "g1", "name": "Tech", "is_anti": False}]
         if table == "keywords":
             return [{"id": "k1", "group_id": "g1", "keyword": "AI"}]
         if table == "stop_words":

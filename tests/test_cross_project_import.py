@@ -252,7 +252,7 @@ def test_keyword_scanner_uses_source_company_id_for_ghost():
 
     call_seq = iter([
         # keyword_groups
-        MagicMock(data=[{"id": "g1", "name": "Tech"}]),
+        MagicMock(data=[{"id": "g1", "name": "Tech", "is_anti": False}]),
         # keywords
         MagicMock(data=[{"id": "k1", "group_id": "g1", "keyword": "Python"}]),
         # stop_words

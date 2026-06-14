@@ -152,13 +152,17 @@ def scan_project_keywords(
     Returns:
         {
             "groups": [{"name": str, "keywords": [str, ...]}],
+            "anti_groups": [{"name": str, "keywords": [str, ...]}],
             "companies": [
                 {
                     "name": str,
                     "inn": str,
                     "results": {
                         keyword: {"count": int, "sentences": [{"field": str, "title": str, "sentence": str}]}
-                    }
+                    },
+                    "anti_results": {
+                        keyword: {"count": int, "sentences": [{"field": str, "title": str, "sentence": str}]}
+                    },
                 }
             ]
         }
@@ -193,7 +197,7 @@ def scan_project_keywords(
 
     # Anti-keywords (optional — scan proceeds with empty results if none defined)
     anti_groups: list[dict] = []
-    anti_all_keywords: list[tuple] = []
+    anti_all_keywords: list[tuple[str, str]] = []
     if anti_groups_rows:
         anti_group_ids = [g["id"] for g in anti_groups_rows]
         anti_keywords_rows = _fetch_all_in("keywords", "group_id", anti_group_ids, select="id, group_id, keyword")
