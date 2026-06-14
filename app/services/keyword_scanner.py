@@ -163,15 +163,18 @@ def scan_project_keywords(
             ]
         }
     """
-    # 1. Fetch keyword groups and keywords
-    groups_rows = _fetch_all("keyword_groups", "project_id", project_id, select="id, name")
+    # 1. Fetch keyword groups and keywords (regular + anti)
+    all_groups_rows = _fetch_all("keyword_groups", "project_id", project_id, select="id, name, is_anti")
+    groups_rows = [g for g in all_groups_rows if not g.get("is_anti")]
+    anti_groups_rows = [g for g in all_groups_rows if g.get("is_anti")]
+
     if not groups_rows:
         raise ValueError("No keyword groups defined for this project")
 
+    # Regular keywords
     group_ids = [g["id"] for g in groups_rows]
     keywords_rows = _fetch_all_in("keywords", "group_id", group_ids, select="id, group_id, keyword")
 
-    # Build group structure
     groups = []
     all_keywords = []  # list of (keyword_text, group_name)
     for g in groups_rows:
@@ -183,10 +186,26 @@ def scan_project_keywords(
     if not all_keywords:
         raise ValueError("No keywords defined in any group")
 
-    # Compile patterns once
     keyword_patterns = {
         kw: re.compile(re.escape(kw), re.IGNORECASE)
         for kw, _ in all_keywords
+    }
+
+    # Anti-keywords (optional — scan proceeds with empty results if none defined)
+    anti_groups: list[dict] = []
+    anti_all_keywords: list[tuple] = []
+    if anti_groups_rows:
+        anti_group_ids = [g["id"] for g in anti_groups_rows]
+        anti_keywords_rows = _fetch_all_in("keywords", "group_id", anti_group_ids, select="id, group_id, keyword")
+        for g in anti_groups_rows:
+            kws = [k["keyword"] for k in anti_keywords_rows if k["group_id"] == g["id"]]
+            anti_groups.append({"name": g["name"], "keywords": kws})
+            for kw in kws:
+                anti_all_keywords.append((kw, g["name"]))
+
+    anti_keyword_patterns = {
+        kw: re.compile(re.escape(kw), re.IGNORECASE)
+        for kw, _ in anti_all_keywords
     }
 
     # 1b. Fetch stop words and compile patterns (empty list = no filtering)
@@ -363,15 +382,49 @@ def scan_project_keywords(
                 except Exception as e:
                     logger.warning("Failed to update keyword hits for company %s: %s", cid, e)
 
+            # Anti-keyword scan (identical logic, separate results dict)
+            anti_keyword_results = {}
+            for kw, _group_name in anti_all_keywords:
+                pattern = anti_keyword_patterns[kw]
+                matches = []
+                for posting in company_postings:
+                    for field in POSTING_TEXT_FIELDS:
+                        raw_text = posting.get(field) or ""
+                        if not raw_text:
+                            continue
+                        clean_text = _strip_html(raw_text)
+                        for sentence in _extract_sentences(clean_text, pattern):
+                            matches.append({
+                                "source": "posting",
+                                "field": field,
+                                "title": posting.get("title") or "",
+                                "sentence": sentence,
+                            })
+                for article in company_news:
+                    for field in NEWS_TEXT_FIELDS:
+                        raw_text = article.get(field) or ""
+                        if not raw_text:
+                            continue
+                        clean_text = _strip_html(raw_text)
+                        for sentence in _extract_sentences(clean_text, pattern):
+                            matches.append({
+                                "source": "news",
+                                "field": field,
+                                "title": article.get("title") or "",
+                                "sentence": sentence,
+                            })
+                anti_keyword_results[kw] = {"count": len(matches), "sentences": matches[:_MAX_SENTENCES_PER_KW]}
+
             result_companies.append({
                 "name": uc["name"],
                 "inn": uc["inn"],
                 "results": keyword_results,
+                "anti_results": anti_keyword_results,
             })
             done_count += 1
             on_company_done(done_count)
 
-    return {"groups": groups, "companies": result_companies}
+    return {"groups": groups, "anti_groups": anti_groups, "companies": result_companies}
 
 
 def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
