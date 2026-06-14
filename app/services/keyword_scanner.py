@@ -560,18 +560,32 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
     return buffer
 
 
-def derive_quick_summary_df(summary_df: pd.DataFrame) -> pd.DataFrame:
-    """Reconstruct Quick_Summary rows from a parsed Summary sheet DataFrame.
+def derive_quick_summary_df(
+    summary_df: pd.DataFrame,
+    anti_summary_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Reconstruct Quick_Summary from Summary (and optionally Anti_Summary) sheets.
 
-    Columns ending with ' (total)' are group total columns — strip the suffix
-    for the display name, use the value as the per-group keyword count.
-    All other non-Company/INN columns are individual keyword columns.
+    Used by the download-with-contacts endpoint to rebuild Quick_Summary from the
+    stored XLSX without re-running the scan.
     """
     total_cols = [c for c in summary_df.columns if c.endswith(" (total)")]
     kw_cols = [
         c for c in summary_df.columns
         if c not in ("Company", "INN") and not c.endswith(" (total)")
     ]
+
+    anti_total_cols: list[str] = []
+    anti_kw_cols: list[str] = []
+    anti_lookup: dict = {}
+    if anti_summary_df is not None:
+        anti_total_cols = [c for c in anti_summary_df.columns if c.endswith(" (total)")]
+        anti_kw_cols = [
+            c for c in anti_summary_df.columns
+            if c not in ("Company", "INN") and not c.endswith(" (total)")
+        ]
+        for _, r in anti_summary_df.iterrows():
+            anti_lookup[(r["Company"], str(r["INN"]))] = r
 
     rows = []
     for _, r in summary_df.iterrows():
@@ -588,11 +602,37 @@ def derive_quick_summary_df(summary_df: pd.DataFrame) -> pd.DataFrame:
             "Keywords Found": ", ".join(found_kws),
         }
         for tc in total_cols:
-            group_name = tc[: -len(" (total)")]
-            row[group_name] = int(r[tc])
+            row[tc[: -len(" (total)")]] = int(r[tc])
+
+        if anti_summary_df is not None:
+            ar = anti_lookup.get((r["Company"], str(r["INN"])))
+            anti_total_kw = int(sum(1 for c in anti_kw_cols if ar[c] > 0)) if ar is not None else 0
+            anti_total_matches = int(sum(ar[c] for c in anti_kw_cols)) if ar is not None else 0
+            anti_total_groups = int(sum(1 for c in anti_total_cols if ar[c] > 0)) if ar is not None else 0
+            anti_found_kws = [c for c in anti_kw_cols if ar is not None and ar[c] > 0]
+            row["Anti Unique Keywords Found"] = anti_total_kw
+            row["Anti Total Keyword Matches"] = anti_total_matches
+            row["Anti Groups With Hits"] = anti_total_groups
+            row["Anti Keywords Found"] = ", ".join(anti_found_kws)
+            for tc in anti_total_cols:
+                row[f"Anti: {tc[: -len(' (total)')]}"] = int(ar[tc]) if ar is not None else 0
+
         rows.append(row)
 
     group_names = [tc[: -len(" (total)")] for tc in total_cols]
-    cols = ["Company", "INN", "Unique Keywords Found", "Total Keyword Matches", "Groups With Hits", "Keywords Found"] + group_names
+    anti_group_names = [tc[: -len(" (total)")] for tc in anti_total_cols]
+    base_cols = [
+        "Company", "INN", "Unique Keywords Found", "Total Keyword Matches",
+        "Groups With Hits", "Keywords Found",
+    ]
+    if anti_summary_df is not None:
+        anti_stat_cols = [
+            "Anti Unique Keywords Found", "Anti Total Keyword Matches",
+            "Anti Groups With Hits", "Anti Keywords Found",
+        ]
+        cols = base_cols + anti_stat_cols + group_names + [f"Anti: {g}" for g in anti_group_names]
+    else:
+        cols = base_cols + group_names
+
     df = pd.DataFrame(rows)
     return df[[c for c in cols if c in df.columns]]

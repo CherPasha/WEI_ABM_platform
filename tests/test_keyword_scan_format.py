@@ -297,3 +297,69 @@ def test_no_anti_groups_quick_summary_has_anti_cols():
     assert "Anti Unique Keywords Found" in df.columns
     row = df[df["Company"] == "Acme Corp"].iloc[0]
     assert row["Anti Unique Keywords Found"] == 0
+
+
+# ── derive_quick_summary_df with anti-keyword support ──
+
+def _anti_summary_df():
+    return pd.DataFrame([
+        {
+            "Company": "Acme Corp",
+            "INN": "7712345678",
+            "bankrupt": 1,
+            "lawsuit": 0,
+            "Risk (total)": 1,
+        },
+        {
+            "Company": "Zero Inc",
+            "INN": "0000000000",
+            "bankrupt": 0,
+            "lawsuit": 0,
+            "Risk (total)": 0,
+        },
+    ])
+
+
+def test_derive_qs_with_anti_columns():
+    df = derive_quick_summary_df(_summary_df(), _anti_summary_df())
+    for col in ["Anti Unique Keywords Found", "Anti Total Keyword Matches",
+                "Anti Groups With Hits", "Anti Keywords Found", "Anti: Risk"]:
+        assert col in df.columns, f"Missing column {col!r}"
+
+
+def test_derive_qs_with_anti_order():
+    """Anti stat cols must immediately follow Keywords Found."""
+    df = derive_quick_summary_df(_summary_df(), _anti_summary_df())
+    cols = list(df.columns)
+    kw_found_idx = cols.index("Keywords Found")
+    anti_unique_idx = cols.index("Anti Unique Keywords Found")
+    assert anti_unique_idx == kw_found_idx + 1
+
+
+def test_derive_qs_with_anti_acme_values():
+    df = derive_quick_summary_df(_summary_df(), _anti_summary_df())
+    row = df[df["Company"] == "Acme Corp"].iloc[0]
+    assert row["Anti Unique Keywords Found"] == 1
+    assert row["Anti Total Keyword Matches"] == 1
+    assert row["Anti Groups With Hits"] == 1
+    assert "bankrupt" in str(row["Anti Keywords Found"])
+    assert row["Anti: Risk"] == 1
+
+
+def test_derive_qs_with_anti_zero_values():
+    df = derive_quick_summary_df(_summary_df(), _anti_summary_df())
+    row = df[df["Company"] == "Zero Inc"].iloc[0]
+    assert row["Anti Unique Keywords Found"] == 0
+    assert row["Anti Total Keyword Matches"] == 0
+    assert row["Anti Groups With Hits"] == 0
+    assert row["Anti: Risk"] == 0
+
+
+def test_derive_qs_without_anti_unchanged():
+    """Passing no anti_summary_df must return same columns as before."""
+    df = derive_quick_summary_df(_summary_df())
+    assert "Anti Unique Keywords Found" not in df.columns
+    assert list(df.columns[:6]) == [
+        "Company", "INN", "Unique Keywords Found", "Total Keyword Matches",
+        "Groups With Hits", "Keywords Found",
+    ]
