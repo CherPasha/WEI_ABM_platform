@@ -1522,7 +1522,7 @@ async def keyword_scan_db_download(project_id: str):
 
 @app.get("/api/projects/{project_id}/keyword-scan/download-with-contacts")
 async def keyword_scan_download_with_contacts(project_id: str):
-    """4-sheet XLSX: Quick_Summary (with Contacts Found), Summary, Details, Contacts."""
+    """XLSX with Quick_Summary (Contacts Found + anti-keyword cols), Summary, Details, Anti_Summary, Anti_Details, Contacts."""
     # 1. Load stored keyword scan XLSX
     result = (
         supabase.table("projects")
@@ -1540,16 +1540,20 @@ async def keyword_scan_download_with_contacts(project_id: str):
     except Exception:
         raise HTTPException(status_code=500, detail="Stored keyword scan result is corrupted")
 
-    # 2. Parse Summary and Details sheets from stored XLSX
+    # 2. Parse all sheets from stored XLSX (Anti_Summary/Anti_Details absent in pre-migration results)
     stored_buf = io.BytesIO(xlsx_bytes)
     xf = pd.ExcelFile(stored_buf)
     summary_df = xf.parse("Summary")
     details_df = xf.parse("Details") if "Details" in xf.sheet_names else pd.DataFrame(
         columns=["Company", "INN", "Keyword Group", "Keyword", "Total Matches", "From Postings", "From News", "Sentences"]
     )
+    anti_summary_df = xf.parse("Anti_Summary") if "Anti_Summary" in xf.sheet_names else None
+    anti_details_df = xf.parse("Anti_Details") if "Anti_Details" in xf.sheet_names else pd.DataFrame(
+        columns=["Company", "INN", "Keyword Group", "Keyword", "Total Matches", "From Postings", "From News", "Sentences"]
+    )
 
-    # 3. Derive Quick_Summary rows from Summary sheet
-    qs_df = derive_quick_summary_df(summary_df)
+    # 3. Derive Quick_Summary rows (including anti-keyword columns when available)
+    qs_df = derive_quick_summary_df(summary_df, anti_summary_df)
 
     # 4. Fetch all companies for this project
     sessions_result = (
@@ -1633,12 +1637,15 @@ async def keyword_scan_download_with_contacts(project_id: str):
     else:
         contacts_df = pd.DataFrame(columns=["company_name"])
 
-    # 8. Write 4-sheet XLSX
+    # 8. Write XLSX: Quick_Summary, Summary, Details, Anti_Summary*, Anti_Details*, Contacts
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         qs_df.to_excel(writer, sheet_name="Quick_Summary", index=False)
         summary_df.to_excel(writer, sheet_name="Summary", index=False)
         details_df.to_excel(writer, sheet_name="Details", index=False)
+        if anti_summary_df is not None:
+            anti_summary_df.to_excel(writer, sheet_name="Anti_Summary", index=False)
+        anti_details_df.to_excel(writer, sheet_name="Anti_Details", index=False)
         contacts_df.to_excel(writer, sheet_name="Contacts", index=False)
     buffer.seek(0)
 
