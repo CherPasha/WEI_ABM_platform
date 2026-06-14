@@ -1017,25 +1017,30 @@
                     return;
                 }
 
-                container.innerHTML = groups.map(g => {
-                    const kwTags = g.keywords.map(k =>
-                        `<span class="kw-tag">${escapeHtml(k.keyword)}<button onclick="deleteAntiKeyword('${k.id}')" title="Remove">&times;</button></span>`
-                    ).join("");
-
-                    return `<details class="kw-group" open>
-                        <summary>
-                            <div class="kw-group-header">
-                                <span>${escapeHtml(g.name)}</span>
-                                <button onclick="event.preventDefault(); deleteAntiKeywordGroup('${g.id}')" title="Delete group">Delete group</button>
-                            </div>
-                        </summary>
-                        <div class="kw-list">${kwTags || '<span style="color:#aaa">No keywords</span>'}</div>
-                        <div class="kw-add-row">
-                            <input type="text" id="anti-kw-input-${g.id}" placeholder="Add keyword...">
-                            <button onclick="addAntiKeyword('${g.id}')">Add</button>
-                        </div>
-                    </details>`;
-                }).join("");
+                container.innerHTML = `<table>
+                    <thead>
+                        <tr><th>Group</th><th># Keywords</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        ${groups.map(g => `
+                        <tr>
+                            <td>
+                                <button data-group-id="${g.id}" data-group-name="${escapeHtml(g.name)}"
+                                        onclick="openAntiKwGroupModal(this)"
+                                        style="background:none;border:none;cursor:pointer;padding:0;margin:0;width:auto;color:var(--pico-primary);text-decoration:underline;font-size:inherit;font-weight:inherit;">
+                                    ${escapeHtml(g.name)}
+                                </button>
+                            </td>
+                            <td>${g.keywords.length}</td>
+                            <td>
+                                <button onclick="deleteAntiKeywordGroup('${g.id}')"
+                                        style="background:none;border:none;cursor:pointer;color:var(--pico-color-red-500);font-size:0.85em;padding:0;margin:0;width:auto;">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>`).join("")}
+                    </tbody>
+                </table>`;
             } catch (err) {
                 console.error("Failed to load anti-keyword groups:", err);
             }
