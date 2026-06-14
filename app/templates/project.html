@@ -1139,7 +1139,7 @@
                         <tr>
                             <td>${escapeHtml(k.keyword)}</td>
                             <td style="width:2em; text-align:right;">
-                                <button onclick="deleteKeyword('${k.id}')" title="Remove"
+                                <button onclick="deleteKeyword('${escapeHtml(String(k.id))}')" title="Remove"
                                         style="background:none;border:none;cursor:pointer;color:var(--pico-color-red-500);padding:0;margin:0;width:auto;line-height:1;">&times;</button>
                             </td>
                         </tr>`).join("")
