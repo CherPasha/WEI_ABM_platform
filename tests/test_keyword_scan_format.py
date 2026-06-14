@@ -42,8 +42,8 @@ def test_sheet_order():
 def test_quick_summary_columns():
     buf = generate_keyword_xlsx(_scan_result())
     df = pd.read_excel(buf, sheet_name="Quick_Summary")
-    assert list(df.columns[:5]) == [
-        "Company", "INN", "Total Keywords Found", "Groups With Hits", "Keywords Found"
+    assert list(df.columns[:6]) == [
+        "Company", "INN", "Unique Keywords Found", "Total Keyword Matches", "Groups With Hits", "Keywords Found",
     ]
     assert "Growth" in df.columns
     assert "Tech" in df.columns
@@ -54,7 +54,7 @@ def test_quick_summary_acme_values():
     df = pd.read_excel(buf, sheet_name="Quick_Summary")
     row = df[df["Company"] == "Acme Corp"].iloc[0]
     # expand=2, AI=1, ML=3 matched; scale=0 did not
-    assert row["Total Keywords Found"] == 3
+    assert row["Unique Keywords Found"] == 3
     assert row["Groups With Hits"] == 2
     assert row["Growth"] == 1   # only expand in Growth
     assert row["Tech"] == 2     # AI and ML in Tech
@@ -69,7 +69,7 @@ def test_quick_summary_zero_company():
     buf = generate_keyword_xlsx(_scan_result())
     df = pd.read_excel(buf, sheet_name="Quick_Summary")
     row = df[df["Company"] == "Zero Inc"].iloc[0]
-    assert row["Total Keywords Found"] == 0
+    assert row["Unique Keywords Found"] == 0
     assert row["Groups With Hits"] == 0
     assert row["Growth"] == 0
     assert row["Tech"] == 0
@@ -107,8 +107,8 @@ def _summary_df():
 
 def test_derive_qs_columns():
     df = derive_quick_summary_df(_summary_df())
-    assert list(df.columns[:5]) == [
-        "Company", "INN", "Total Keywords Found", "Groups With Hits", "Keywords Found"
+    assert list(df.columns[:6]) == [
+        "Company", "INN", "Unique Keywords Found", "Total Keyword Matches", "Groups With Hits", "Keywords Found",
     ]
     assert "Growth" in df.columns
     assert "Tech" in df.columns
@@ -117,7 +117,8 @@ def test_derive_qs_columns():
 def test_derive_qs_acme_values():
     df = derive_quick_summary_df(_summary_df())
     row = df[df["Company"] == "Acme Corp"].iloc[0]
-    assert row["Total Keywords Found"] == 3   # expand, AI, ML
+    assert row["Unique Keywords Found"] == 3   # expand, AI, ML
+    assert row["Total Keyword Matches"] == 6   # expand=2, AI=1, ML=3
     assert row["Groups With Hits"] == 2
     assert row["Growth"] == 1
     assert row["Tech"] == 2
@@ -131,7 +132,8 @@ def test_derive_qs_acme_values():
 def test_derive_qs_zero_values():
     df = derive_quick_summary_df(_summary_df())
     row = df[df["Company"] == "Zero Inc"].iloc[0]
-    assert row["Total Keywords Found"] == 0
+    assert row["Unique Keywords Found"] == 0
+    assert row["Total Keyword Matches"] == 0
     assert row["Groups With Hits"] == 0
     assert row["Growth"] == 0
     assert row["Tech"] == 0
