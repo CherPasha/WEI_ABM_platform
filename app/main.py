@@ -1645,7 +1645,7 @@ async def keyword_scan_download_with_contacts(project_id: str):
         details_df.to_excel(writer, sheet_name="Details", index=False)
         if anti_summary_df is not None:
             anti_summary_df.to_excel(writer, sheet_name="Anti_Summary", index=False)
-        anti_details_df.to_excel(writer, sheet_name="Anti_Details", index=False)
+            anti_details_df.to_excel(writer, sheet_name="Anti_Details", index=False)
         contacts_df.to_excel(writer, sheet_name="Contacts", index=False)
     buffer.seek(0)
 
