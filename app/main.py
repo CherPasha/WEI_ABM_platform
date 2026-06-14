@@ -809,6 +809,7 @@ async def list_keyword_groups(project_id: str):
         supabase.table("keyword_groups")
         .select("id, name, created_at")
         .eq("project_id", project_id)
+        .eq("is_anti", False)
         .order("created_at")
         .execute()
     ).data
@@ -844,6 +845,7 @@ async def create_keyword_group(project_id: str, body: CreateKeywordGroup):
     result = supabase.table("keyword_groups").insert({
         "project_id": project_id,
         "name": body.name,
+        "is_anti": False,
     }).execute()
     return result.data[0]
 
@@ -899,6 +901,7 @@ async def import_keyword_groups(project_id: str, file: UploadFile = File(...)):
         supabase.table("keyword_groups")
         .select("id, name")
         .eq("project_id", project_id)
+        .eq("is_anti", False)
         .execute()
     ).data
     group_by_name = {g["name"]: g["id"] for g in existing_groups}
@@ -922,7 +925,7 @@ async def import_keyword_groups(project_id: str, file: UploadFile = File(...)):
 
     if new_names:
         result = supabase.table("keyword_groups").insert([
-            {"project_id": project_id, "name": name} for name in new_names
+            {"project_id": project_id, "name": name, "is_anti": False} for name in new_names
         ]).execute()
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create keyword groups")
@@ -1279,12 +1282,12 @@ def _run_scan_task(project_id: str, started_at: datetime | None = None) -> None:
             "error": str(e),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
-    except Exception:
+    except Exception as e:
         _logger.exception("Keyword scan failed for project %s", project_id)
         try:
             _upsert_keyword_scan(project_id, {
                 "status": "error",
-                "error": "Scan failed unexpectedly",
+                "error": f"{type(e).__name__}: {e}",
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             })
         except Exception:
