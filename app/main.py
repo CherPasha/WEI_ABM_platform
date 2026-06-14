@@ -988,6 +988,146 @@ async def import_keyword_groups(project_id: str, file: UploadFile = File(...)):
     }
 
 
+# ──────────────────────── Anti-Keyword Groups ────────────────────────
+
+
+@app.get("/api/projects/{project_id}/anti-keyword-groups")
+async def list_anti_keyword_groups(project_id: str):
+    groups = (
+        supabase.table("keyword_groups")
+        .select("id, name, created_at")
+        .eq("project_id", project_id)
+        .eq("is_anti", True)
+        .order("created_at")
+        .execute()
+    ).data
+
+    group_ids = [g["id"] for g in groups]
+    keywords = []
+    for i in range(0, len(group_ids), 50):
+        chunk = group_ids[i:i + 50]
+        offset = 0
+        while True:
+            batch = (
+                supabase.table("keywords")
+                .select("id, group_id, keyword")
+                .in_("group_id", chunk)
+                .range(offset, offset + 999)
+                .execute()
+            ).data
+            keywords.extend(batch)
+            if len(batch) < 1000:
+                break
+            offset += 1000
+
+    for g in groups:
+        g["keywords"] = [k for k in keywords if k["group_id"] == g["id"]]
+
+    return groups
+
+
+@app.post("/api/projects/{project_id}/anti-keyword-groups")
+async def create_anti_keyword_group(project_id: str, body: CreateKeywordGroup):
+    result = supabase.table("keyword_groups").insert({
+        "project_id": project_id,
+        "name": body.name,
+        "is_anti": True,
+    }).execute()
+    return result.data[0]
+
+
+@app.post("/api/projects/{project_id}/anti-keyword-groups/import")
+async def import_anti_keyword_groups(project_id: str, file: UploadFile = File(...)):
+    if not (file.filename or "").endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="File must be .xlsx")
+
+    file_bytes = await file.read()
+    try:
+        parsed = parse_keyword_xlsx(file_bytes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    existing_groups = (
+        supabase.table("keyword_groups")
+        .select("id, name")
+        .eq("project_id", project_id)
+        .eq("is_anti", True)
+        .execute()
+    ).data
+    group_by_name = {g["name"]: g["id"] for g in existing_groups}
+
+    seen: set[str] = set()
+    ordered_group_names: list[str] = []
+    for row in parsed:
+        if row["group"] not in seen:
+            seen.add(row["group"])
+            ordered_group_names.append(row["group"])
+
+    existing_names = [n for n in ordered_group_names if n in group_by_name]
+    new_names = [n for n in ordered_group_names if n not in group_by_name]
+
+    group_id_by_name: dict[str, str] = {}
+    for name in existing_names:
+        group_id_by_name[name] = group_by_name[name]
+
+    if new_names:
+        result = supabase.table("keyword_groups").insert([
+            {"project_id": project_id, "name": name, "is_anti": True} for name in new_names
+        ]).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create anti-keyword groups")
+        for g in result.data:
+            group_id_by_name[g["name"]] = g["id"]
+
+    groups_created = len(new_names)
+    groups_updated = len(existing_names)
+
+    all_group_ids = list(group_id_by_name.values())
+    all_existing_kws = []
+    for i in range(0, len(all_group_ids), 50):
+        chunk = all_group_ids[i:i + 50]
+        offset = 0
+        while True:
+            batch = (
+                supabase.table("keywords")
+                .select("group_id, keyword")
+                .in_("group_id", chunk)
+                .range(offset, offset + 999)
+                .execute()
+            ).data
+            all_existing_kws.extend(batch)
+            if len(batch) < 1000:
+                break
+            offset += 1000
+
+    existing_kws_by_group: dict[str, set[str]] = {gid: set() for gid in all_group_ids}
+    for kw_row in all_existing_kws:
+        existing_kws_by_group[kw_row["group_id"]].add(kw_row["keyword"].lower())
+
+    keywords_added = 0
+    keywords_skipped = 0
+    for row in parsed:
+        group_id = group_id_by_name[row["group"]]
+        existing_set = existing_kws_by_group[group_id]
+        to_insert = []
+        for kw in row["keywords"]:
+            if kw.lower() in existing_set:
+                keywords_skipped += 1
+            else:
+                to_insert.append({"group_id": group_id, "keyword": kw})
+                existing_set.add(kw.lower())
+                keywords_added += 1
+        if to_insert:
+            supabase.table("keywords").insert(to_insert).execute()
+
+    return {
+        "groups_created": groups_created,
+        "groups_updated": groups_updated,
+        "keywords_added": keywords_added,
+        "keywords_skipped": keywords_skipped,
+    }
+
+
 # ──────────────────────── Stop Words ────────────────────────
 
 
