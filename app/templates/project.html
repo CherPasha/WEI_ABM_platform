@@ -351,6 +351,20 @@
                     </p>
                 </article>
 
+            <!-- Anti-keyword group modal -->
+            <dialog id="anti-kw-group-modal">
+                <article>
+                    <header>
+                        <button aria-label="Close" rel="prev" onclick="closeAntiKwGroupModal()"></button>
+                        <h3 id="anti-kw-group-modal-title"></h3>
+                    </header>
+                    <div id="anti-kw-group-modal-body"></div>
+                    <footer>
+                        <button class="secondary" onclick="closeAntiKwGroupModal()">Close</button>
+                    </footer>
+                </article>
+            </dialog>
+
             </div><!-- /panel-antikeywords -->
 
             <!-- ── Keywords panel ── -->
@@ -968,6 +982,7 @@
 
         async function deleteAntiKeyword(keywordId) {
             await fetch(`/api/keywords/${keywordId}`, { method: "DELETE" });
+            if (activeAntiKwGroupId) await renderAntiKwGroupModal(activeAntiKwGroupId);
             loadAntiKeywordGroups();
             refreshTabStates();
         }
@@ -1063,20 +1078,6 @@
         async function deleteAntiKeywordGroup(groupId) {
             if (!confirm("Delete this anti-keyword group and all its keywords?")) return;
             await fetch(`/api/keyword-groups/${groupId}`, { method: "DELETE" });
-            loadAntiKeywordGroups();
-            refreshTabStates();
-        }
-
-        async function addAntiKeyword(groupId) {
-            const input = document.getElementById(`anti-kw-input-${groupId}`);
-            const keyword = input.value.trim();
-            if (!keyword) return;
-            await fetch(`/api/keyword-groups/${groupId}/keywords`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ keyword }),
-            });
-            input.value = "";
             loadAntiKeywordGroups();
             refreshTabStates();
         }
@@ -1184,6 +1185,77 @@
             if (resp.ok) {
                 await renderKwGroupModal(groupId);
                 loadKeywordGroups();
+                refreshTabStates();
+            }
+        }
+
+        let activeAntiKwGroupId = null;
+
+        function openAntiKwGroupModal(btn) {
+            activeAntiKwGroupId = btn.dataset.groupId;
+            document.getElementById("anti-kw-group-modal-title").textContent = btn.dataset.groupName;
+            renderAntiKwGroupModal(activeAntiKwGroupId);
+            document.getElementById("anti-kw-group-modal").showModal();
+        }
+
+        function closeAntiKwGroupModal() {
+            activeAntiKwGroupId = null;
+            document.getElementById("anti-kw-group-modal").close();
+        }
+
+        async function renderAntiKwGroupModal(groupId) {
+            const body = document.getElementById("anti-kw-group-modal-body");
+            try {
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/anti-keyword-groups`);
+                const groups = await resp.json();
+                const group = groups.find(g => String(g.id) === String(groupId));
+                if (!group) { body.innerHTML = '<p>Group not found.</p>'; return; }
+
+                const rows = group.keywords.length
+                    ? group.keywords.map(k => `
+                        <tr>
+                            <td>${escapeHtml(k.keyword)}</td>
+                            <td style="width:2em; text-align:right;">
+                                <button onclick="deleteAntiKeyword('${escapeHtml(String(k.id))}')" title="Remove"
+                                        style="background:none;border:none;cursor:pointer;color:var(--pico-color-red-500);padding:0;margin:0;width:auto;line-height:1;">&times;</button>
+                            </td>
+                        </tr>`).join("")
+                    : `<tr><td colspan="2" style="color:var(--pico-muted-color);font-size:0.9em;">No keywords yet.</td></tr>`;
+
+                body.innerHTML = `<table>
+                    <tbody>
+                        ${rows}
+                        <tr>
+                            <td><input type="text" id="anti-kw-modal-input" placeholder="Add keyword..."
+                                       style="margin:0;"
+                                       onkeydown="if(event.key==='Enter'){addAntiKeywordFromModal('${groupId}')}"></td>
+                            <td style="width:5em;">
+                                <button onclick="addAntiKeywordFromModal('${groupId}')"
+                                        style="margin:0;padding:0.3em 0.8em;font-size:0.85em;white-space:nowrap;">Add</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>`;
+
+                document.getElementById("anti-kw-modal-input").focus();
+            } catch (err) {
+                console.error("Failed to render anti-keyword modal:", err);
+                body.innerHTML = '<p style="color:var(--pico-color-red-500);">Failed to load keywords.</p>';
+            }
+        }
+
+        async function addAntiKeywordFromModal(groupId) {
+            const input = document.getElementById("anti-kw-modal-input");
+            const keyword = input.value.trim();
+            if (!keyword) return;
+            const resp = await fetch(`/api/keyword-groups/${groupId}/keywords`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ keyword }),
+            });
+            if (resp.ok) {
+                await renderAntiKwGroupModal(groupId);
+                loadAntiKeywordGroups();
                 refreshTabStates();
             }
         }
