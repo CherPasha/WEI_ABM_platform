@@ -27,7 +27,7 @@
         .kw-tag {
             display: inline-flex; align-items: center; gap: 0.3em;
             background: var(--pico-secondary-background); padding: 0.25em 0.6em;
-            border-radius: 4px; font-size: 0.85em;
+            border-radius: 4px; font-size: 0.85em; color: white;
         }
         .kw-tag button {
             background: none; border: none; cursor: pointer; padding: 0; margin: 0;
@@ -38,16 +38,6 @@
         .kw-add-row button { margin: 0; padding: 0.3em 0.8em; font-size: 0.85em; white-space: nowrap; }
         .kw-group-header { display: flex; justify-content: space-between; align-items: center; }
         .kw-group-header button { background: none; border: none; cursor: pointer; color: var(--pico-color-red-500); font-size: 0.85em; padding: 0; margin: 0; width: auto; }
-    .role-tag {
-        display: inline-flex; align-items: center; gap: 0.3em;
-        background: var(--pico-secondary-background); padding: 0.25em 0.6em;
-        border-radius: 4px; font-size: 0.85em;
-    }
-    .role-tag button {
-        background: none; border: none; cursor: pointer; padding: 0; margin: 0;
-        color: var(--pico-color-red-500); font-size: 1em; line-height: 1; width: auto;
-    }
-    .roles-list { display: flex; flex-wrap: wrap; gap: 0.4em; margin: 0.5em 0; }
         /* ── Tabs ── */
         .tabs > input[type="radio"] { display: none; }
         .tabs > div[id^="panel-"] { display: none; }
@@ -169,9 +159,9 @@
                 <span class="step-arrow" aria-hidden="true">›</span>
                 <label for="tab-stopwords">     <span class="step-num">2</span> Stop Words</label>
                 <span class="step-arrow" aria-hidden="true">›</span>
-                <label for="tab-keywords">      <span class="step-num">3</span> Keywords</label>
+                <label for="tab-antikeywords">  <span class="step-num">3</span> Anti Keywords</label>
                 <span class="step-arrow" aria-hidden="true">›</span>
-                <label for="tab-antikeywords">  <span class="step-num">4</span> Анти ключевые слова</label>
+                <label for="tab-keywords">      <span class="step-num">4</span> Keywords</label>
                 <span class="step-arrow" aria-hidden="true">›</span>
                 <label for="tab-roles">         <span class="step-num">5</span> Roles</label>
                 <span class="step-arrow" aria-hidden="true">›</span>
@@ -340,44 +330,11 @@
 
             </div><!-- /panel-stopwords -->
 
-            <!-- ── Keywords panel ── -->
-            <div id="panel-keywords">
-
-                <!-- Keyword Analysis -->
-                <article>
-                    <h3>Keyword Analysis</h3>
-                    <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
-                        <input type="text" id="new-group-name" placeholder="Group name (e.g. ABM)" style="margin:0;">
-                        <button onclick="addKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
-                        <button id="import-kw-btn" class="secondary" style="margin:0; white-space:nowrap;"
-                                onclick="document.getElementById('kw-import-input').click()">Import from file</button>
-                        <input type="file" id="kw-import-input" accept=".xlsx" style="display:none"
-                               onchange="importKeywordFile(this)">
-                        <span id="kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
-                    </div>
-                    <div id="keyword-groups-container"></div>
-                    <!-- Keyword scan status panel -->
-                    <div id="kw-scan-status" style="display:none; margin-bottom:0.75em;">
-                        <p id="kw-scan-status-text" style="font-size:0.9em; margin:0 0 0.4em;"></p>
-                        <progress id="kw-scan-progress-bar" value="0" max="100" style="width:100%; display:none;"></progress>
-                        <button id="kw-stop-btn" onclick="stopKeywordScan()" class="secondary"
-                                style="margin-top:0.4em; display:none; font-size:0.85em; padding:0.3em 0.8em; color:var(--pico-color-red-500);">
-                            Stop Scan
-                        </button>
-                    </div>
-
-                    <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-top:0.5em;">
-                        Run Keyword Scan
-                    </button>
-                </article>
-
-            </div><!-- /panel-keywords -->
-
             <!-- ── Anti-Keywords panel ── -->
             <div id="panel-antikeywords">
 
                 <article>
-                    <h3>Анти ключевые слова</h3>
+                    <h3>Anti Keywords</h3>
                     <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
                         <input type="text" id="new-anti-group-name" placeholder="Group name (e.g. Риски)" style="margin:0;">
                         <button onclick="addAntiKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
@@ -396,13 +353,47 @@
 
             </div><!-- /panel-antikeywords -->
 
+            <!-- ── Keywords panel ── -->
+            <div id="panel-keywords">
+
+                <!-- Keyword Analysis -->
+                <article>
+                    <h3>Keyword Analysis</h3>
+
+                    <!-- Scan button + status at the top -->
+                    <button id="scan-btn" onclick="runKeywordScan()" class="contrast" style="margin-bottom:0.75em;">
+                        Run Keyword Scan
+                    </button>
+                    <div id="kw-scan-status" style="display:none; margin-bottom:1em;">
+                        <p id="kw-scan-status-text" style="font-size:0.9em; margin:0 0 0.4em;"></p>
+                        <progress id="kw-scan-progress-bar" value="0" max="100" style="width:100%; display:none;"></progress>
+                        <button id="kw-stop-btn" onclick="stopKeywordScan()" class="secondary"
+                                style="margin-top:0.4em; display:none; font-size:0.85em; padding:0.3em 0.8em; color:var(--pico-color-red-500);">
+                            Stop Scan
+                        </button>
+                    </div>
+
+                    <div style="display:flex; gap:0.5em; margin-bottom:1em; align-items:center; flex-wrap:wrap;">
+                        <input type="text" id="new-group-name" placeholder="Group name (e.g. ABM)" style="margin:0;">
+                        <button onclick="addKeywordGroup()" style="margin:0; white-space:nowrap;">Add Group</button>
+                        <button id="import-kw-btn" class="secondary" style="margin:0; white-space:nowrap;"
+                                onclick="document.getElementById('kw-import-input').click()">Import from file</button>
+                        <input type="file" id="kw-import-input" accept=".xlsx" style="display:none"
+                               onchange="importKeywordFile(this)">
+                        <span id="kw-import-status" style="font-size:0.85em; color:var(--pico-muted-color);"></span>
+                    </div>
+                    <div id="keyword-groups-container"></div>
+                </article>
+
+            </div><!-- /panel-keywords -->
+
             <!-- ── Roles panel ── -->
             <div id="panel-roles">
 
                 <!-- Roles management -->
                 <article>
                     <h3>Target Roles for Contact Enrichment</h3>
-                    <div id="roles-list" class="roles-list"></div>
+                    <div id="roles-list"></div>
                     <div style="display:flex; gap:0.5em; align-items:center; margin-top:0.5em; flex-wrap:wrap;">
                         <input type="text" id="new-role-input" placeholder="Add role, e.g. CEO, CTO" style="margin:0; padding:0.3em 0.5em; font-size:0.9em;">
                         <button onclick="addRole()" style="margin:0; padding:0.3em 0.8em; font-size:0.85em; white-space:nowrap;">Add</button>
@@ -1263,12 +1254,21 @@
         function renderRoles() {
             const container = document.getElementById("roles-list");
             if (!projectRoles.length) {
-                container.innerHTML = '<span style="color:var(--pico-muted-color); font-size:0.9em;">No target roles set. Add roles to enable contact enrichment.</span>';
+                container.innerHTML = '<p style="color:var(--pico-muted-color); font-size:0.9em;">No target roles set. Add roles to enable contact enrichment.</p>';
                 return;
             }
-            container.innerHTML = projectRoles.map((r, idx) =>
-                `<span class="role-tag">${escapeHtml(r)}<button onclick="removeRole(${idx})" title="Remove">&times;</button></span>`
-            ).join("");
+            container.innerHTML = `<table style="margin-bottom:0.5em;">
+                <tbody>
+                    ${projectRoles.map((r, idx) => `
+                    <tr>
+                        <td>${escapeHtml(r)}</td>
+                        <td style="width:2em; text-align:right;">
+                            <button onclick="removeRole(${idx})" title="Remove"
+                                    style="background:none;border:none;cursor:pointer;color:var(--pico-color-red-500);padding:0;margin:0;width:auto;line-height:1;">&times;</button>
+                        </td>
+                    </tr>`).join("")}
+                </tbody>
+            </table>`;
         }
 
         async function saveRoles() {
