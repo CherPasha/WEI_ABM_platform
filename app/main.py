@@ -1056,6 +1056,7 @@ async def import_anti_keyword_groups(project_id: str, file: UploadFile = File(..
     ).data
     group_by_name = {g["name"]: g["id"] for g in existing_groups}
 
+    # Pass 1 — resolve all groups (create missing ones in a single batch insert)
     seen: set[str] = set()
     ordered_group_names: list[str] = []
     for row in parsed:
@@ -1082,6 +1083,8 @@ async def import_anti_keyword_groups(project_id: str, file: UploadFile = File(..
     groups_created = len(new_names)
     groups_updated = len(existing_names)
 
+    # Between passes — batch-fetch all existing keywords for all resolved groups
+    # Chunk by 50 IDs to avoid URL length limits; paginate to bypass 1000-row cap.
     all_group_ids = list(group_id_by_name.values())
     all_existing_kws = []
     for i in range(0, len(all_group_ids), 50):
@@ -1100,14 +1103,17 @@ async def import_anti_keyword_groups(project_id: str, file: UploadFile = File(..
                 break
             offset += 1000
 
+    # Build per-group keyword sets (lowercase)
     existing_kws_by_group: dict[str, set[str]] = {gid: set() for gid in all_group_ids}
     for kw_row in all_existing_kws:
         existing_kws_by_group[kw_row["group_id"]].add(kw_row["keyword"].lower())
 
+    # Pass 2 — insert missing keywords
     keywords_added = 0
     keywords_skipped = 0
     for row in parsed:
-        group_id = group_id_by_name[row["group"]]
+        group_name = row["group"]
+        group_id = group_id_by_name[group_name]
         existing_set = existing_kws_by_group[group_id]
         to_insert = []
         for kw in row["keywords"]:
