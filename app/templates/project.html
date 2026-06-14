@@ -1002,6 +1002,110 @@
             }
         }
 
+        // ---- Anti-Keyword Groups ----
+        async function loadAntiKeywordGroups() {
+            const container = document.getElementById("anti-keyword-groups-container");
+            try {
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/anti-keyword-groups`);
+                const groups = await resp.json();
+
+                if (!groups.length) {
+                    container.innerHTML = '<p style="color:var(--pico-muted-color); font-size:0.9em;">No anti-keyword groups yet. Create one above.</p>';
+                    return;
+                }
+
+                container.innerHTML = groups.map(g => {
+                    const kwTags = g.keywords.map(k =>
+                        `<span class="kw-tag">${escapeHtml(k.keyword)}<button onclick="deleteKeyword('${k.id}')" title="Remove">&times;</button></span>`
+                    ).join("");
+
+                    return `<details class="kw-group" open>
+                        <summary>
+                            <div class="kw-group-header">
+                                <span>${escapeHtml(g.name)}</span>
+                                <button onclick="event.preventDefault(); deleteAntiKeywordGroup('${g.id}')" title="Delete group">Delete group</button>
+                            </div>
+                        </summary>
+                        <div class="kw-list">${kwTags || '<span style="color:#aaa">No keywords</span>'}</div>
+                        <div class="kw-add-row">
+                            <input type="text" id="anti-kw-input-${g.id}" placeholder="Add keyword...">
+                            <button onclick="addAntiKeyword('${g.id}')">Add</button>
+                        </div>
+                    </details>`;
+                }).join("");
+            } catch (err) {
+                console.error("Failed to load anti-keyword groups:", err);
+            }
+        }
+
+        async function addAntiKeywordGroup() {
+            const input = document.getElementById("new-anti-group-name");
+            const name = input.value.trim();
+            if (!name) return;
+            await fetch(`/api/projects/${PROJECT_ID}/anti-keyword-groups`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name }),
+            });
+            input.value = "";
+            loadAntiKeywordGroups();
+            refreshTabStates();
+        }
+
+        async function deleteAntiKeywordGroup(groupId) {
+            if (!confirm("Delete this anti-keyword group and all its keywords?")) return;
+            await fetch(`/api/keyword-groups/${groupId}`, { method: "DELETE" });
+            loadAntiKeywordGroups();
+            refreshTabStates();
+        }
+
+        async function addAntiKeyword(groupId) {
+            const input = document.getElementById(`anti-kw-input-${groupId}`);
+            const keyword = input.value.trim();
+            if (!keyword) return;
+            await fetch(`/api/keyword-groups/${groupId}/keywords`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ keyword }),
+            });
+            input.value = "";
+            loadAntiKeywordGroups();
+            refreshTabStates();
+        }
+
+        async function importAntiKeywordFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const btn = document.getElementById("import-anti-kw-btn");
+            const status = document.getElementById("anti-kw-import-status");
+            btn.disabled = true;
+            btn.setAttribute("aria-busy", "true");
+            status.textContent = "Importing...";
+            try {
+                const formData = new FormData();
+                formData.append("file", file);
+                const resp = await fetch(`/api/projects/${PROJECT_ID}/anti-keyword-groups/import`, {
+                    method: "POST",
+                    body: formData,
+                });
+                let data = {};
+                try { data = await resp.json(); } catch (_) {}
+                if (!resp.ok) {
+                    status.textContent = "Error: " + (data.detail || resp.statusText || "Import failed");
+                } else {
+                    status.textContent = `Done: ${data.groups_created} groups, ${data.keywords_added} keywords added, ${data.keywords_skipped} skipped`;
+                    loadAntiKeywordGroups();
+                    refreshTabStates();
+                }
+            } catch (err) {
+                status.textContent = "Error: " + err.message;
+            } finally {
+                btn.disabled = false;
+                btn.removeAttribute("aria-busy");
+                input.value = "";
+            }
+        }
+
         // ---- Keyword Scan Status ----
         let kwScanPollInterval = null;
 
@@ -1601,6 +1705,7 @@
         loadHistory();
         loadStopWords();
         loadKeywordGroups();
+        loadAntiKeywordGroups();
         // Initialize keyword scan state on page load
         loadKeywordScanStatus().then(status => {
             if (status === "running" || status === "cancelling") startKeywordScanPolling();
