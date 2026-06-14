@@ -85,6 +85,7 @@ CREATE TABLE companies (
     raw_data            JSONB,
     keyword_hit_count   INTEGER     NOT NULL DEFAULT 0,
     keyword_group_count INTEGER     NOT NULL DEFAULT 0,
+    keyword_scanned_at  TIMESTAMPTZ,
     -- Cross-project import: points to the source company for ghost companies
     source_company_id   UUID        REFERENCES companies(id) ON DELETE SET NULL,
     created_at          TIMESTAMPTZ DEFAULT now()
@@ -181,6 +182,7 @@ CREATE TABLE keyword_groups (
     id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID        REFERENCES projects(id) ON DELETE CASCADE,
     name       TEXT        NOT NULL,
+    is_anti    BOOLEAN     NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
