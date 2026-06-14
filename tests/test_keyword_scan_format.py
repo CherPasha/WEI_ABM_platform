@@ -36,7 +36,9 @@ def _scan_result():
 
 def test_sheet_order():
     buf = generate_keyword_xlsx(_scan_result())
-    assert pd.ExcelFile(buf).sheet_names == ["Quick_Summary", "Summary", "Details"]
+    assert pd.ExcelFile(buf).sheet_names == [
+        "Quick_Summary", "Summary", "Details", "Anti_Summary", "Anti_Details"
+    ]
 
 
 def test_quick_summary_columns():
@@ -243,6 +245,7 @@ def test_quick_summary_anti_values_zero():
     assert row["Anti Total Keyword Matches"] == 0
     assert row["Anti Groups With Hits"] == 0
     assert row["Anti: Risk"] == 0
+    assert str(row["Anti Keywords Found"]) in ("", "nan")
 
 
 def test_anti_summary_sheet_structure():

@@ -238,10 +238,16 @@ def scan_project_keywords(
     # 4b. Fetch keyword_scanned_at for all company IDs (one batch query for resume detection)
     all_cids_for_checkpoint = [cid for uc in unique_companies for cid in uc["company_ids"]]
     if all_cids_for_checkpoint:
-        checkpoint_rows = _fetch_all_in(
-            "companies", "id", all_cids_for_checkpoint,
-            select="id, keyword_scanned_at"
-        )
+        try:
+            checkpoint_rows = _fetch_all_in(
+                "companies", "id", all_cids_for_checkpoint,
+                select="id, keyword_scanned_at"
+            )
+        except Exception as e:
+            raise RuntimeError(
+                "Failed to fetch keyword_scanned_at checkpoints — "
+                "run supabase_migration_keyword_scanned_at.sql"
+            ) from e
         scanned_map = {r["id"]: r.get("keyword_scanned_at") for r in checkpoint_rows}
     else:
         scanned_map = {}
@@ -369,8 +375,9 @@ def scan_project_keywords(
 
 
 def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
-    """Generate a three-sheet XLSX from scan results."""
+    """Generate a five-sheet XLSX from scan results."""
     groups = scan_result["groups"]
+    anti_groups = scan_result.get("anti_groups", [])
     companies = scan_result["companies"]
 
     # ── Sheet 1: Quick_Summary ──
@@ -399,16 +406,43 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
         row["Total Keyword Matches"] = total_matches
         row["Groups With Hits"] = total_groups
         row["Keywords Found"] = ", ".join(found_kw_names)
+
+        anti_total_kw = 0
+        anti_total_groups = 0
+        anti_found_kw_names: list[str] = []
+        for anti_group in anti_groups:
+            anti_group_kw_count = 0
+            for kw in anti_group["keywords"]:
+                count = company.get("anti_results", {}).get(kw, {}).get("count", 0)
+                if count > 0:
+                    anti_group_kw_count += 1
+                    anti_total_kw += 1
+                    anti_found_kw_names.append(kw)
+            row[f"Anti: {anti_group['name']}"] = anti_group_kw_count
+            if anti_group_kw_count > 0:
+                anti_total_groups += 1
+        anti_total_matches = sum(
+            company.get("anti_results", {}).get(kw, {}).get("count", 0)
+            for g in anti_groups for kw in g["keywords"]
+        )
+        row["Anti Unique Keywords Found"] = anti_total_kw
+        row["Anti Total Keyword Matches"] = anti_total_matches
+        row["Anti Groups With Hits"] = anti_total_groups
+        row["Anti Keywords Found"] = ", ".join(anti_found_kw_names)
         qs_rows.append(row)
 
     qs_df = pd.DataFrame(qs_rows)
-    qs_cols = ["Company", "INN", "Unique Keywords Found", "Total Keyword Matches", "Groups With Hits", "Keywords Found"] + [
-        g["name"] for g in groups
-    ]
+    qs_cols = (
+        ["Company", "INN",
+         "Unique Keywords Found", "Total Keyword Matches", "Groups With Hits", "Keywords Found",
+         "Anti Unique Keywords Found", "Anti Total Keyword Matches", "Anti Groups With Hits", "Anti Keywords Found"]
+        + [g["name"] for g in groups]
+        + [f"Anti: {g['name']}" for g in anti_groups]
+    )
     qs_cols = [c for c in qs_cols if c in qs_df.columns]
     qs_df = qs_df[qs_cols]
 
-    # ── Sheet 2: Summary ──
+    # ── Sheet 2: Summary (unchanged) ──
     summary_rows = []
     for company in companies:
         row = {"Company": company["name"], "INN": company["inn"]}
@@ -431,7 +465,7 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
     ordered_cols = [c for c in ordered_cols if c in summary_df.columns]
     summary_df = summary_df[ordered_cols]
 
-    # ── Sheet 3: Details ──
+    # ── Sheet 3: Details (unchanged) ──
     detail_rows = []
     for company in companies:
         for group in groups:
@@ -460,11 +494,68 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
         columns=["Company", "INN", "Keyword Group", "Keyword", "Total Matches", "From Postings", "From News", "Sentences"]
     )
 
+    # ── Sheet 4: Anti_Summary ──
+    anti_summary_rows = []
+    for company in companies:
+        row = {"Company": company["name"], "INN": company["inn"]}
+        for anti_group in anti_groups:
+            group_found = 0
+            for kw in anti_group["keywords"]:
+                count = company.get("anti_results", {}).get(kw, {}).get("count", 0)
+                row[kw] = count
+                if count > 0:
+                    group_found += 1
+            row[f"{anti_group['name']} (total)"] = group_found
+        anti_summary_rows.append(row)
+
+    if anti_groups:
+        anti_summary_df = pd.DataFrame(anti_summary_rows)
+        anti_ordered_cols = ["Company", "INN"]
+        for anti_group in anti_groups:
+            for kw in anti_group["keywords"]:
+                anti_ordered_cols.append(kw)
+            anti_ordered_cols.append(f"{anti_group['name']} (total)")
+        anti_ordered_cols = [c for c in anti_ordered_cols if c in anti_summary_df.columns]
+        anti_summary_df = anti_summary_df[anti_ordered_cols]
+    else:
+        anti_summary_df = pd.DataFrame(columns=["Company", "INN"])
+
+    # ── Sheet 5: Anti_Details ──
+    anti_detail_rows = []
+    for company in companies:
+        for anti_group in anti_groups:
+            for kw in anti_group["keywords"]:
+                matches = company.get("anti_results", {}).get(kw, {}).get("sentences", [])
+                if not matches:
+                    continue
+                combined = "\n\n".join(
+                    f"[{'Job Posting' if m['source'] == 'posting' else 'News'} / {m['title']} / {m['field']}] {m['sentence']}"
+                    for m in matches
+                )
+                posting_count = sum(1 for m in matches if m["source"] == "posting")
+                news_count = sum(1 for m in matches if m["source"] == "news")
+                anti_detail_rows.append({
+                    "Company": company["name"],
+                    "INN": company["inn"],
+                    "Keyword Group": anti_group["name"],
+                    "Keyword": kw,
+                    "Total Matches": len(matches),
+                    "From Postings": posting_count,
+                    "From News": news_count,
+                    "Sentences": combined,
+                })
+
+    anti_details_df = pd.DataFrame(anti_detail_rows) if anti_detail_rows else pd.DataFrame(
+        columns=["Company", "INN", "Keyword Group", "Keyword", "Total Matches", "From Postings", "From News", "Sentences"]
+    )
+
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         qs_df.to_excel(writer, sheet_name="Quick_Summary", index=False)
         summary_df.to_excel(writer, sheet_name="Summary", index=False)
         details_df.to_excel(writer, sheet_name="Details", index=False)
+        anti_summary_df.to_excel(writer, sheet_name="Anti_Summary", index=False)
+        anti_details_df.to_excel(writer, sheet_name="Anti_Details", index=False)
     buffer.seek(0)
     return buffer
 
