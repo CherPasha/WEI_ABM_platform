@@ -1277,6 +1277,21 @@ def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
             inn = (inn or "").strip()
             return f"inn:{inn}" if inn else f"name:{(name or '').strip().lower()}"
 
+        def _norm_inn(val) -> str:
+            """Normalize INN to a plain integer string for comparison.
+
+            pandas may read a numeric INN column as float64 when NaN rows exist,
+            producing "1234567890.0" instead of "1234567890".  Strip the trailing
+            ".0" so Summary and Details rows match regardless of inferred dtype.
+            """
+            s = str(val) if val is not None else ""
+            if s in ("nan", "None", ""):
+                return ""
+            # Remove trailing ".0" from float representation
+            if s.endswith(".0") and s[:-2].lstrip("-").isdigit():
+                return s[:-2]
+            return s
+
         new_keys = {
             _dedup_key(c["inn"], c["name"])
             for c in new_scan_result["companies"]
@@ -1294,7 +1309,7 @@ def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
         # Reconstruct old companies from Summary (and Anti_Summary) sheets
         old_companies = []
         for _, row_s in summary_df.iterrows():
-            inn = str(row_s.get("INN", "") or "")
+            inn = _norm_inn(row_s.get("INN", ""))
             company_name = str(row_s.get("Company", "") or "")
             if _dedup_key(inn, company_name) in new_keys:
                 continue  # already in new results; skip
@@ -1305,7 +1320,7 @@ def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
                 sentences = []
                 if not details_df.empty and "Keyword" in details_df.columns:
                     detail_rows = details_df[
-                        (details_df["INN"].astype(str) == inn) &
+                        (details_df["INN"].apply(_norm_inn) == inn) &
                         (details_df["Keyword"].astype(str) == str(kw))
                     ]
                     if not detail_rows.empty:
@@ -1320,7 +1335,7 @@ def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
             if anti_kw_cols:
                 anti_row = None
                 if not anti_summary_df.empty and "INN" in anti_summary_df.columns:
-                    matches = anti_summary_df[anti_summary_df["INN"].astype(str) == inn]
+                    matches = anti_summary_df[anti_summary_df["INN"].apply(_norm_inn) == inn]
                     if not matches.empty:
                         anti_row = matches.iloc[0]
                 for kw in anti_kw_cols:
@@ -1328,7 +1343,7 @@ def _merge_resume_results(project_id: str, new_scan_result: dict) -> dict:
                     sentences = []
                     if not anti_details_df.empty and "Keyword" in anti_details_df.columns:
                         detail_rows = anti_details_df[
-                            (anti_details_df["INN"].astype(str) == inn) &
+                            (anti_details_df["INN"].apply(_norm_inn) == inn) &
                             (anti_details_df["Keyword"].astype(str) == str(kw))
                         ]
                         if not detail_rows.empty:
@@ -1358,6 +1373,32 @@ def _run_scan_task(project_id: str, started_at: datetime | None = None) -> None:
     _logger = logging.getLogger(__name__)
     now = datetime.now(timezone.utc)
     is_resume = started_at is not None
+
+    # When recovering an interrupted scan that has no stored XLSX yet, all
+    # companies may already be checkpointed (keyword_scanned_at >= started_at)
+    # with nothing to merge into — producing an empty export.  Treat such
+    # recoveries as fresh scans so the old checkpoint timestamps don't skip
+    # every company.
+    if is_resume:
+        try:
+            proj_row = (
+                supabase.table("projects")
+                .select("keyword_scan_result")
+                .eq("id", project_id)
+                .execute()
+            )
+            if not proj_row.data or not proj_row.data[0].get("keyword_scan_result"):
+                _logger.info(
+                    "Recovery for project %s: no stored XLSX found; running as fresh scan",
+                    project_id,
+                )
+                is_resume = False
+                started_at = None  # will be set to `now` in the block below
+        except Exception:
+            _logger.warning(
+                "Failed to check keyword_scan_result for project %s during recovery; proceeding as resume",
+                project_id,
+            )
 
     try:
         if not is_resume:

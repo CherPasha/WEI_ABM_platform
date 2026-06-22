@@ -36,7 +36,11 @@ def parse_keyword_xlsx(file_bytes: bytes) -> list[dict]:
         if group_name not in groups:
             groups[group_name] = []
             group_order.append(group_name)
-        groups[group_name].append(keyword)
+
+        for token in keyword.split(","):
+            kw = token.strip().strip('"')
+            if kw:
+                groups[group_name].append(kw)
 
     wb.close()
     return [{"group": g, "keywords": groups[g]} for g in group_order]

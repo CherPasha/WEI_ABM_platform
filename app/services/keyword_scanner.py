@@ -191,7 +191,7 @@ def scan_project_keywords(
         raise ValueError("No keywords defined in any group")
 
     keyword_patterns = {
-        kw: re.compile(re.escape(kw), re.IGNORECASE)
+        kw: re.compile(r"\b" + re.escape(kw) + r"\b", re.IGNORECASE)
         for kw, _ in all_keywords
     }
 
@@ -208,7 +208,7 @@ def scan_project_keywords(
                 anti_all_keywords.append((kw, g["name"]))
 
     anti_keyword_patterns = {
-        kw: re.compile(re.escape(kw), re.IGNORECASE)
+        kw: re.compile(r"\b" + re.escape(kw) + r"\b", re.IGNORECASE)
         for kw, _ in anti_all_keywords
     }
 
@@ -443,6 +443,7 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
         total_kw = 0
         total_groups = 0
         found_kw_names: list[str] = []
+        seen_kws: set[str] = set()  # deduplicate keywords that appear in multiple groups
         row: dict = {"Company": company["name"], "INN": company["inn"]}
         for group in groups:
             group_kw_count = 0
@@ -450,14 +451,16 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
                 count = company["results"].get(kw, {}).get("count", 0)
                 if count > 0:
                     group_kw_count += 1
-                    total_kw += 1
-                    found_kw_names.append(kw)
+                    if kw not in seen_kws:
+                        total_kw += 1
+                        found_kw_names.append(kw)
+                        seen_kws.add(kw)
             row[group["name"]] = group_kw_count
             if group_kw_count > 0:
                 total_groups += 1
         total_matches = sum(
             company["results"].get(kw, {}).get("count", 0)
-            for g in groups for kw in g["keywords"]
+            for kw in seen_kws
         )
         row["Unique Keywords Found"] = total_kw
         row["Total Keyword Matches"] = total_matches
@@ -467,20 +470,23 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
         anti_total_kw = 0
         anti_total_groups = 0
         anti_found_kw_names: list[str] = []
+        seen_anti_kws: set[str] = set()  # deduplicate anti-keywords
         for anti_group in anti_groups:
             anti_group_kw_count = 0
             for kw in anti_group["keywords"]:
                 count = company.get("anti_results", {}).get(kw, {}).get("count", 0)
                 if count > 0:
                     anti_group_kw_count += 1
-                    anti_total_kw += 1
-                    anti_found_kw_names.append(kw)
+                    if kw not in seen_anti_kws:
+                        anti_total_kw += 1
+                        anti_found_kw_names.append(kw)
+                        seen_anti_kws.add(kw)
             row[f"Anti: {anti_group['name']}"] = anti_group_kw_count
             if anti_group_kw_count > 0:
                 anti_total_groups += 1
         anti_total_matches = sum(
             company.get("anti_results", {}).get(kw, {}).get("count", 0)
-            for g in anti_groups for kw in g["keywords"]
+            for kw in seen_anti_kws
         )
         row["Anti Unique Keywords Found"] = anti_total_kw
         row["Anti Total Keyword Matches"] = anti_total_matches
@@ -514,22 +520,29 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
         summary_rows.append(row)
 
     summary_df = pd.DataFrame(summary_rows)
+    seen_kw_cols: set[str] = set()
     ordered_cols = ["Company", "INN"]
     for group in groups:
         for kw in group["keywords"]:
-            ordered_cols.append(kw)
+            if kw not in seen_kw_cols:  # each keyword appears only once as a column
+                ordered_cols.append(kw)
+                seen_kw_cols.add(kw)
         ordered_cols.append(f"{group['name']} (total)")
     ordered_cols = [c for c in ordered_cols if c in summary_df.columns]
     summary_df = summary_df[ordered_cols]
 
-    # ── Sheet 3: Details (unchanged) ──
+    # ── Sheet 3: Details ──
     detail_rows = []
     for company in companies:
+        seen_detail_kws: set[str] = set()  # deduplicate per company
         for group in groups:
             for kw in group["keywords"]:
+                if kw in seen_detail_kws:
+                    continue
                 matches = company["results"].get(kw, {}).get("sentences", [])
                 if not matches:
                     continue
+                seen_detail_kws.add(kw)
                 combined = "\n\n".join(
                     f"[{'Job Posting' if m['source'] == 'posting' else 'News'} / {m['title']} / {m['field']}] {m['sentence']}"
                     for m in matches
@@ -567,10 +580,13 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
 
     if anti_groups:
         anti_summary_df = pd.DataFrame(anti_summary_rows)
+        seen_anti_kw_cols: set[str] = set()
         anti_ordered_cols = ["Company", "INN"]
         for anti_group in anti_groups:
             for kw in anti_group["keywords"]:
-                anti_ordered_cols.append(kw)
+                if kw not in seen_anti_kw_cols:  # each anti-keyword column once
+                    anti_ordered_cols.append(kw)
+                    seen_anti_kw_cols.add(kw)
             anti_ordered_cols.append(f"{anti_group['name']} (total)")
         anti_ordered_cols = [c for c in anti_ordered_cols if c in anti_summary_df.columns]
         anti_summary_df = anti_summary_df[anti_ordered_cols]
@@ -580,11 +596,15 @@ def generate_keyword_xlsx(scan_result: dict) -> io.BytesIO:
     # ── Sheet 5: Anti_Details ──
     anti_detail_rows = []
     for company in companies:
+        seen_anti_detail_kws: set[str] = set()  # deduplicate per company
         for anti_group in anti_groups:
             for kw in anti_group["keywords"]:
+                if kw in seen_anti_detail_kws:
+                    continue
                 matches = company.get("anti_results", {}).get(kw, {}).get("sentences", [])
                 if not matches:
                     continue
+                seen_anti_detail_kws.add(kw)
                 combined = "\n\n".join(
                     f"[{'Job Posting' if m['source'] == 'posting' else 'News'} / {m['title']} / {m['field']}] {m['sentence']}"
                     for m in matches
